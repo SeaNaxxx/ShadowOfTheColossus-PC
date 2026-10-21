@@ -13,7 +13,8 @@
 #include <chrono>
 #include <span>
 #include <boost/container/small_vector.hpp>
-#include <immintrin.h>
+
+#include "common/cpu_pause.h"
 
 namespace Vulkan {
 
@@ -74,7 +75,7 @@ void Scheduler::WaitSubmitted(u64 tick, bool kick) {
     }
     u64 submitted = recorded_submit_tick.load(std::memory_order_acquire);
     for (u32 spins = 0; spins < 4096 && submitted < tick; ++spins) {
-        _mm_pause();
+        Common::CpuPause();
         submitted = recorded_submit_tick.load(std::memory_order_acquire);
     }
     while (submitted < tick) {
@@ -277,7 +278,7 @@ void Scheduler::SubmitAheadAndWait() {
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::microseconds(spin_us);
         while (instance.GetDevice().getFenceStatus(*ahead_fence) == vk::Result::eNotReady &&
                std::chrono::steady_clock::now() < deadline) {
-            _mm_pause();
+            Common::CpuPause();
         }
     }
     const auto wait_result =

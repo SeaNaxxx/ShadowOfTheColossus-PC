@@ -7,6 +7,7 @@
 #include <boost/preprocessor/stringize.hpp>
 
 #include "common/assert.h"
+#include "common/cpu_pause.h"
 #include "common/debug.h"
 #include "common/polyfill_thread.h"
 #include "common/thread.h"
@@ -105,9 +106,7 @@ Liverpool::~Liverpool() {
 }
 
 static inline void CpuRelax() {
-#if defined(__x86_64__) || defined(_M_X64)
-    __builtin_ia32_pause();
-#endif
+    Common::CpuPause();
 }
 
 void Liverpool::BackLoop(std::stop_token stoken) {

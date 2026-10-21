@@ -13,14 +13,14 @@
 #endif
 
 #include "common/assert.h"
+#include "common/cpu_pause.h"
 #include "common/logging/log.h"
 #include "common/perf_stats.h"
 #include "common/thread.h"
 #include "video_core/renderer_vulkan/vk_recorder.h"
 
 #if defined(_M_X64) || defined(__x86_64__)
-#include <immintrin.h>
-#define RECORDER_PAUSE() _mm_pause()
+#define RECORDER_PAUSE() Common::CpuPause()
 #else
 #define RECORDER_PAUSE()
 #endif

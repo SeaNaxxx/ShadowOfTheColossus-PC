@@ -13,6 +13,7 @@
 #include <queue>
 #include <tsl/robin_map.h>
 
+#include "common/cpu_pause.h"
 #include "common/lru_cache.h"
 #include "video_core/sotc_stats.h"
 #include "common/multi_level_page_table.h"
@@ -162,7 +163,7 @@ private:
     static void AsymmetricBarrier();
     static void Pause(u32& spins) {
         if (++spins < 4096) {
-            __builtin_ia32_pause();
+            Common::CpuPause();
         } else {
             std::this_thread::yield();
         }

@@ -14,7 +14,7 @@
 #include <ucontext.h>
 #include <unistd.h>
 #endif
-#include <x86intrin.h>
+#include "common/rdtsc.h"
 
 namespace BbWriteLog {
 namespace {
@@ -67,7 +67,7 @@ void Record(std::uint64_t address, const void* data, std::uint64_t size, Source 
     const std::uint32_t slot = source < 32 ? source : 31;
     counts[slot].fetch_add(1, std::memory_order_relaxed);
     byte_totals[slot].fetch_add(size, std::memory_order_relaxed);
-    const std::uint64_t tsc_now = __rdtsc();
+    const std::uint64_t tsc_now = Common::FencedRDTSC();
     std::uint64_t prev = last_report.load(std::memory_order_relaxed);
     if (tsc_now - prev > 30'000'000'000ull && last_report.compare_exchange_strong(prev, tsc_now)) {
         std::string line = "Write log totals:";
@@ -80,7 +80,7 @@ void Record(std::uint64_t address, const void* data, std::uint64_t size, Source 
         std::fprintf(stderr, "%s\n", line.c_str());
     }
     static thread_local const std::uint32_t tid = static_cast<std::uint32_t>(gettid());
-    Entry e{address, size, 0, __rdtsc(), source, tid};
+    Entry e{address, size, 0, Common::FencedRDTSC(), source, tid};
     std::memcpy(&e.first, data, size < 8 ? size : 8);
     Push(ring, head, e);
     // Only small writes are scanned: scanning downloads of megabytes delays them enough to hide
@@ -125,7 +125,7 @@ extern "C" void bbgpu_dump_guest_writes(void* ucontext) {
     }
     const char* sources[] = {"backing",      "WriteData",           "fence",
                              "EOP (decoded)", "WriteData (decoded)", "EOS (decoded)"};
-    const std::uint64_t now = __rdtsc();
+    const std::uint64_t now = Common::FencedRDTSC();
     const auto print = [&](const Entry& e, const char* what) {
         std::fprintf(stderr,
                      "Write log: %s %s %#llx +%llu first %#llx tid %u, %.3f s before the fault\n",

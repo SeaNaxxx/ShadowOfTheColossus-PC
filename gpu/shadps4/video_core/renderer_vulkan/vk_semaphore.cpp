@@ -8,9 +8,9 @@
 #include <chrono>
 #include <cstring>
 #include <cstdlib>
-#include <immintrin.h>
 
 #include "common/assert.h"
+#include "common/cpu_pause.h"
 
 #include <vk_mem_alloc.h>
 
@@ -131,7 +131,7 @@ bool Semaphore::SpinMarker(MarkerSlot slot, u64 value) const {
         std::chrono::steady_clock::now() + std::chrono::microseconds(marker_spin_us);
     do {
         for (int i = 0; i < 64; ++i) {
-            _mm_pause();
+            Common::CpuPause();
             if (MarkerReached(slot, value)) {
                 return true;
             }
@@ -185,7 +185,7 @@ void Semaphore::Wait(u64 tick) {
             if (IsFree(tick)) {
                 return;
             }
-            _mm_pause();
+            Common::CpuPause();
         }
     }
 
@@ -194,7 +194,7 @@ void Semaphore::Wait(u64 tick) {
     if (const u32 spin_us = SotcWaitSpinUs(); spin_us != 0) {
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::microseconds(spin_us);
         do {
-            _mm_pause();
+            Common::CpuPause();
             Refresh();
             if (IsFree(tick)) {
                 return;

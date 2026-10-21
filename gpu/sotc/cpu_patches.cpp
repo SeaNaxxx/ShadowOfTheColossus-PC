@@ -16,10 +16,12 @@
 #include <vector>
 #include <Zydis/Zydis.h>
 #include <fmt/format.h>
+#include "common/arch.h"
+#ifdef ARCH_X86_64
 #include <xbyak/xbyak.h>
 #include <xbyak/xbyak_util.h>
+#endif
 #include "common/alignment.h"
-#include "common/arch.h"
 #include "common/assert.h"
 #include "common/decoder.h"
 #include "common/signal_context.h"
@@ -37,6 +39,8 @@
 #include <pthread.h>
 #include <sys/ucontext.h>
 #endif
+
+#ifdef ARCH_X86_64
 
 using namespace Xbyak::util;
 
@@ -2531,3 +2535,54 @@ void PrePatchInstructions(u64 segment_addr, u64 segment_size) {
 }
 
 } // namespace Core
+
+#else
+
+namespace Core {
+
+namespace WindowsGuestRedZoneProtection {
+namespace {
+
+std::atomic active_mode{WindowsGuestRedZoneProtectionMode::Disabled};
+
+} // namespace
+
+void SetActiveMode(WindowsGuestRedZoneProtectionMode mode) noexcept {
+    active_mode.store(mode, std::memory_order_release);
+}
+
+WindowsGuestRedZoneProtectionMode GetActiveMode() noexcept {
+    return active_mode.load(std::memory_order_acquire);
+}
+
+bool IsStaticPatchingEnabled() noexcept {
+    return GetActiveMode() == WindowsGuestRedZoneProtectionMode::StaticPatching;
+}
+
+} // namespace WindowsGuestRedZoneProtection
+
+RedZonePatchResult PatchRedZoneMemoryInstructions(u64, u64, std::span<const uintptr_t>,
+                                                  std::span<const uintptr_t>) {
+    return {};
+}
+
+bool NeedsSse4aEmulation() {
+    return false;
+}
+
+u64 PatchShortSse4aInstructions(u64, u64, std::span<const uintptr_t>) {
+    return 0;
+}
+
+u64 PatchRdtscInstructions(u64, u64, std::span<const uintptr_t>, void*, u64* unpatched) {
+    *unpatched = 0;
+    return 0;
+}
+
+void RegisterPatchModule(void*, u64, void*, u64) {}
+
+void PrePatchInstructions(u64, u64) {}
+
+} // namespace Core
+
+#endif
