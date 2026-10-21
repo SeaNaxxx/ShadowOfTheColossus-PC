@@ -26,6 +26,17 @@ static const uint64_t STACK_SIGNATURE=UINT64_C(0x7149f2ca7149f2ca), STACK_SIZE_C
 typedef void (ABI *FiberEntry)(uint64_t arg_on_initialize, uint64_t arg_on_run);
 struct Fiber;
 /* Host-private; offsets are used by the assembly below. */
+#if defined(__aarch64__) || defined(_M_ARM64)
+typedef struct FiberContext {
+    uint64_t x19, x20, x21, x22, x23, x24, x25, x26, x27, x28;   /* 0x00..0x48 */
+    uint64_t fp, lr, sp;                                         /* 0x50, 0x58, 0x60 */
+    uint64_t d[8];                                               /* d8..d15: 0x68..0xa7 */
+    uint32_t fpcr, fpsr;                                         /* 0xa8, 0xac */
+    struct Fiber *current_fiber, *prev_fiber;
+    uint64_t arg_on_run_to, arg_on_return, return_val;
+} FiberContext;
+_Static_assert(__builtin_offsetof(FiberContext,d)==0x68 && __builtin_offsetof(FiberContext,fpcr)==0xa8 && __builtin_offsetof(FiberContext,fpsr)==0xac,"context layout");
+#else
 typedef struct FiberContext {
     uint64_t rax, rcx, rdx, rbx, rsp, rbp, r8, r9, r10, r11, r12, r13, r14, r15; /* 0x00..0x68 */
     uint16_t fpucw; uint16_t pad; uint32_t mxcsr;                                /* 0x70, 0x74 */
@@ -33,6 +44,18 @@ typedef struct FiberContext {
     uint64_t arg_on_run_to, arg_on_return, return_val;
 } FiberContext;
 _Static_assert(__builtin_offsetof(FiberContext,fpucw)==0x70 && __builtin_offsetof(FiberContext,mxcsr)==0x74,"context layout");
+#endif
+#if defined(__aarch64__) || defined(_M_ARM64)
+typedef struct {
+    FiberEntry entry;            /* 0x00 */
+    uint64_t arg_on_initialize;  /* 0x08 */
+    uint64_t arg_on_run_to;      /* 0x10 */
+    void *stack_addr;            /* 0x18 */
+    _Atomic uint32_t *state;     /* 0x20 */
+    uint32_t fpcr, fpsr;         /* 0x28, 0x2c */
+} FiberData;
+_Static_assert(__builtin_offsetof(FiberData,state)==0x20 && __builtin_offsetof(FiberData,fpsr)==0x2c,"data layout");
+#else
 typedef struct {
     FiberEntry entry;            /* 0x00 */
     uint64_t arg_on_initialize;  /* 0x08 */
@@ -43,6 +66,7 @@ typedef struct {
     uint32_t mxcsr;              /* 0x2c */
 } FiberData;
 _Static_assert(__builtin_offsetof(FiberData,state)==0x20 && __builtin_offsetof(FiberData,mxcsr)==0x2c,"data layout");
+#endif
 /* Guest-allocated SceFiber (256 bytes); same layout as shadPS4. */
 typedef struct Fiber {
     uint32_t magic_start;
@@ -78,12 +102,144 @@ static _Thread_local FiberContext *thread_fiber_slot;
 static __attribute__((noinline)) FiberContext *thread_fiber_get(void) { __asm__ volatile(""); return thread_fiber_slot; }
 static __attribute__((noinline)) void thread_fiber_set(FiberContext *ctx) { __asm__ volatile(""); thread_fiber_slot=ctx; }
 static _Atomic unsigned fibers_created, fibers_run, fiber_switches;
+/* The host stack to run a context-less fiber on (below the saved run point), and the
+ * saved host frame pointer (sceFiberGetFramePointerAddress). */
+static void *fiber_stack_below(FiberContext *ctx) {
+#if defined(__aarch64__) || defined(_M_ARM64)
+    return (void *)(ctx->sp & ~UINT64_C(15));
+#else
+    return (void *)(ctx->rsp & ~UINT64_C(15));
+#endif
+}
+static uint64_t fiber_frame_pointer(FiberContext *ctx) {
+#if defined(__aarch64__) || defined(_M_ARM64)
+    return ctx->fp;
+#else
+    return ctx->rbp;
+#endif
+}
 
 ABI __attribute__((returns_twice)) int32_t fiber_setjmp(FiberContext *ctx) __asm__("sotc_fiber_setjmp");
 ABI __attribute__((noreturn)) void fiber_longjmp(FiberContext *ctx) __asm__("sotc_fiber_longjmp");
 ABI __attribute__((noreturn)) void fiber_switch_entry(FiberData *data, int set_fpu) __asm__("sotc_fiber_switch_entry");
 ABI __attribute__((noreturn, used)) void fiber_force_quit(uint64_t value) __asm__("sotc_fiber_force_quit");
 
+#if defined(__aarch64__) || defined(_M_ARM64)
+__asm__(
+    ".text\n"
+    ".globl sotc_fiber_setjmp\n"
+    "sotc_fiber_setjmp:\n"
+    "  stp x19, x20, [x0, #0x00]\n"
+    "  stp x21, x22, [x0, #0x10]\n"
+    "  stp x23, x24, [x0, #0x20]\n"
+    "  stp x25, x26, [x0, #0x30]\n"
+    "  stp x27, x28, [x0, #0x40]\n"
+    "  stp x29, x30, [x0, #0x50]\n"
+    "  mov x16, sp\n"
+    "  str x16, [x0, #0x60]\n"
+    "  stp d8,  d9,  [x0, #0x68]\n"
+    "  stp d10, d11, [x0, #0x78]\n"
+    "  stp d12, d13, [x0, #0x80]\n"
+    "  stp d14, d15, [x0, #0x88]\n"
+    "  mrs x16, fpcr\n"
+    "  str w16, [x0, #0xa8]\n"
+    "  mrs x16, fpsr\n"
+    "  str w16, [x0, #0xac]\n"
+    "  mov w0, #0\n"
+    "  ret\n"
+    ".globl sotc_fiber_longjmp\n"
+    "sotc_fiber_longjmp:\n"
+    "  ldp x19, x20, [x0, #0x00]\n"
+    "  ldp x21, x22, [x0, #0x10]\n"
+    "  ldp x23, x24, [x0, #0x20]\n"
+    "  ldp x25, x26, [x0, #0x30]\n"
+    "  ldp x27, x28, [x0, #0x40]\n"
+    "  ldp x29, x30, [x0, #0x50]\n"
+    "  ldr x16, [x0, #0x60]\n"
+    "  mov sp, x16\n"
+    "  ldp d8,  d9,  [x0, #0x68]\n"
+    "  ldp d10, d11, [x0, #0x78]\n"
+    "  ldp d12, d13, [x0, #0x80]\n"
+    "  ldp d14, d15, [x0, #0x88]\n"
+    "  ldr w16, [x0, #0xa8]\n"
+    "  msr fpcr, x16\n"
+    "  ldr w16, [x0, #0xac]\n"
+    "  msr fpsr, x16\n"
+    "  mov w0, #1\n"
+    "  ret\n"
+    ".globl sotc_fiber_switch_entry\n"
+    "sotc_fiber_switch_entry:\n"
+    "  mov x16, x0\n"                 /* data */
+    "  ldr x17, [x16, #0x18]\n"
+    "  mov sp, x17\n"                 /* the fiber's own stack */
+    "  mov x29, xzr\n"                /* terminate the frame chain */
+    "  ldr x15, [x16, #0x20]\n"
+    "  cbz x15, 1f\n"
+    "  mov w17, #2\n"
+    "  str w17, [x15]\n"             /* previous fiber is idle once its stack is left */
+    "1:\n"
+    "  cbz w1, 2f\n"
+    "  ldr w15, [x16, #0x28]\n"
+    "  msr fpcr, x15\n"
+    "  ldr w15, [x16, #0x2c]\n"
+    "  msr fpsr, x15\n"
+    "2:\n"
+    "  ldr x19, [x16, #0x00]\n"
+    "  ldr x0, [x16, #0x08]\n"
+    "  ldr x1, [x16, #0x10]\n"
+    "  mov x2, xzr\n"
+    "  mov x3, xzr\n"
+    "  mov x4, xzr\n"
+    "  mov x5, xzr\n"
+    "  mov x6, xzr\n"
+    "  mov x7, xzr\n"
+    "  mov x8, xzr\n"
+    "  mov x9, xzr\n"
+    "  mov x10, xzr\n"
+    "  mov x11, xzr\n"
+    "  mov x12, xzr\n"
+    "  mov x13, xzr\n"
+    "  mov x14, xzr\n"
+    "  mov x15, xzr\n"
+    "  mov x17, xzr\n"
+    "  mov x18, xzr\n"
+    "  mov x20, xzr\n"
+    "  mov x21, xzr\n"
+    "  mov x22, xzr\n"
+    "  mov x23, xzr\n"
+    "  mov x24, xzr\n"
+    "  mov x25, xzr\n"
+    "  mov x26, xzr\n"
+    "  mov x27, xzr\n"
+    "  mov x28, xzr\n"
+    "  movi v0.2d, #0\n"
+    "  movi v1.2d, #0\n"
+    "  movi v2.2d, #0\n"
+    "  movi v3.2d, #0\n"
+    "  movi v4.2d, #0\n"
+    "  movi v5.2d, #0\n"
+    "  movi v6.2d, #0\n"
+    "  movi v7.2d, #0\n"
+    "  movi v16.2d, #0\n"
+    "  movi v17.2d, #0\n"
+    "  movi v18.2d, #0\n"
+    "  movi v19.2d, #0\n"
+    "  movi v20.2d, #0\n"
+    "  movi v21.2d, #0\n"
+    "  movi v22.2d, #0\n"
+    "  movi v23.2d, #0\n"
+    "  movi v24.2d, #0\n"
+    "  movi v25.2d, #0\n"
+    "  movi v26.2d, #0\n"
+    "  movi v27.2d, #0\n"
+    "  movi v28.2d, #0\n"
+    "  movi v29.2d, #0\n"
+    "  movi v30.2d, #0\n"
+    "  movi v31.2d, #0\n"
+    "  blr x19\n"
+    "  mov w0, #1\n"                 /* the entry must never return */
+    "  b sotc_fiber_force_quit\n");
+#else
 __asm__(
     ".text\n"
     ".globl sotc_fiber_setjmp\n"
@@ -170,6 +326,7 @@ __asm__(
     "  movl $1, %edi\n"             /* the entry must never return */
     "  call sotc_fiber_force_quit\n"
     "  ud2\n");
+#endif
 
 ABI void fiber_force_quit(uint64_t value) {
     FiberContext *ctx=thread_fiber_get();
@@ -214,8 +371,14 @@ static int32_t attach_context(Fiber *f, void *addr, uint64_t size) {
     return 0;
 }
 static __attribute__((noreturn)) void enter(Fiber *f, uint64_t arg, void *stack, _Atomic uint32_t *previous_state) {
+#if defined(__aarch64__) || defined(_M_ARM64)
+    /* All FP traps masked, round-to-nearest, FZ mirrors the x86 build's FTZ default. */
+    FiberData data={.entry=f->entry,.arg_on_initialize=f->arg_on_initialize,.arg_on_run_to=arg,
+                    .stack_addr=stack,.state=previous_state,.fpcr=UINT32_C(1)<<24,.fpsr=0};
+#else
     FiberData data={.entry=f->entry,.arg_on_initialize=f->arg_on_initialize,.arg_on_run_to=arg,
                     .stack_addr=stack,.state=previous_state,.fpucw=0x037f,.mxcsr=0x9fc0};
+#endif
     fiber_switch_entry(&data,(f->flags & FLAG_SET_FPU_REGS)!=0);
 }
 static __attribute__((noreturn)) void switch_to_fiber(Fiber *f, uint64_t arg, FiberContext *ctx) {
@@ -229,7 +392,7 @@ static __attribute__((noreturn)) void switch_fiber(Fiber *current, Fiber *f, uin
     if (!f->addr_context) {
         /* A fiber without its own context runs on the thread's stack below the run point. */
         ctx->prev_fiber=NULL;
-        enter(f,arg,(void *)(ctx->rsp & ~UINT64_C(15)),&current->state);
+        enter(f,arg,fiber_stack_below(ctx),&current->state);
     }
     switch_to_fiber(f,arg,ctx);
 }
@@ -291,7 +454,7 @@ static ABI int32_t fiber_run_impl(Fiber *f, void *addr, uint64_t size, uint64_t 
     thread_fiber_set(&ctx);
     if (!fiber_setjmp(&ctx)) {
         if (f->addr_context) switch_to_fiber(f,arg,&ctx);
-        enter(f,arg,(void *)(ctx.rsp & ~UINT64_C(15)),NULL);
+        enter(f,arg,fiber_stack_below(&ctx),NULL);
     }
     /* Back from sceFiberReturnToThread (or a returning entry). */
     Fiber *current=ctx.current_fiber;
@@ -378,7 +541,7 @@ static ABI int32_t fiber_rename(Fiber *f, const char *name) {
 static ABI int32_t fiber_frame_pointer_address(uint64_t *out) {
     if (!out) return FIBER_ERROR_NULL;
     if (!thread_fiber_get()) return FIBER_ERROR_PERMISSION;
-    *out=thread_fiber_get()->rbp;
+    *out=fiber_frame_pointer(thread_fiber_get());
     return 0;
 }
 
