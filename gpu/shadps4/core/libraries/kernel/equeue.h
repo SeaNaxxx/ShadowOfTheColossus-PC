@@ -7,6 +7,7 @@
 #include <mutex>
 #include <string>
 #include <vector>
+#include <exception> // boost::asio execution headers miss this include under libc++ (NDK)
 #include <boost/asio/steady_timer.hpp>
 
 #include <unordered_map>

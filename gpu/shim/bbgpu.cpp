@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <atomic>
 #include <condition_variable>
+#include <exception> // boost::asio execution headers miss this include under libc++ (NDK)
 #include <boost/asio/io_context.hpp>
 #include "common/polyfill_thread.h"
 #include "video_core/renderdoc.h"
