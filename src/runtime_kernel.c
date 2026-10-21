@@ -3,6 +3,7 @@
  * use FreeBSD numbering; host errno values never reach the guest directly. */
 #define _GNU_SOURCE
 #include "runtime.h"
+#include "guest_cpu.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,7 +13,6 @@
 #include <time.h>
 #include <unistd.h>
 #include <sys/time.h>
-#include <x86intrin.h>
 #ifndef _WIN32
 #include <sys/random.h>
 #include <sys/resource.h>
@@ -93,27 +93,14 @@ static uint64_t host_tsc(void) {
 #ifdef _WIN32
     if (tsc_from_qpc) return compat_qpc_tsc();
 #endif
-    return __rdtsc();
+    return guest_cpu_tsc();
 }
 static ABI uint64_t read_tsc(void) { return host_tsc(); }
-static uint64_t tsc_hz;
 static ABI uint64_t tsc_frequency(void) {
 #ifdef _WIN32
     if (tsc_from_qpc) return compat_qpc_tsc_frequency();
 #endif
-    if (!tsc_hz) {
-        struct timespec a,b,nap={0,20000000};
-        clock_gettime(CLOCK_MONOTONIC,&a); uint64_t t0=__rdtsc();
-#ifdef _WIN32
-        (void)nap; compat_sleep_ns(20000000);
-#else
-        nanosleep(&nap,NULL);
-#endif
-        clock_gettime(CLOCK_MONOTONIC,&b); uint64_t t1=__rdtsc();
-        uint64_t ns=(uint64_t)(b.tv_sec-a.tv_sec)*1000000000+(uint64_t)(b.tv_nsec-a.tv_nsec);
-        tsc_hz=(t1-t0)*1000000000/(ns ? ns : 1);
-    }
-    return tsc_hz;
+    return guest_cpu_tsc_frequency();
 }
 /* Shared with the GPU library so flip/label timestamps use the guest's clock. */
 uint64_t runtime_process_time_us(void) { return process_time(); }
@@ -255,7 +242,7 @@ static ABI int32_t thread_once(int32_t *once,void (ABI *routine)(void)) {
         int32_t state=__atomic_load_n(once,__ATOMIC_ACQUIRE);
         if (state==1) return 0;
         if (state==0 && __atomic_compare_exchange_n(once,&state,2,0,__ATOMIC_ACQ_REL,__ATOMIC_ACQUIRE)) {
-            routine();
+            guest_cpu_call((uintptr_t)routine,0,NULL);
             __atomic_store_n(once,1,__ATOMIC_RELEASE);
             return 0;
         }
@@ -299,7 +286,8 @@ void runtime_thread_keys_cleanup(void) {
             void *value=key_values[i];
             if (!value || !keys[i].used || !keys[i].destructor) continue;
             key_values[i]=NULL; any=1;
-            keys[i].destructor(value);
+            const uint64_t argument = (uint64_t)(uintptr_t)value;
+            guest_cpu_call((uintptr_t)keys[i].destructor,1,&argument);
         }
         if (!any) break;
     }

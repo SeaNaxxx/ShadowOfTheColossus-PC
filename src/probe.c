@@ -1,16 +1,19 @@
-/* Minimal x86-64 native loader experiment. Not a PS4 emulator or game port. */
+/* Minimal x86-64 guest loader prototype. Not a PS4 emulator or game port. */
 #define _GNU_SOURCE
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
+#include "guest_cpu.h"
+#ifdef GUEST_CPU_NATIVE
 #include <cpuid.h>
+#endif
 #include "runtime.h"
 #include "gpu/bbgpu.h"
 #include "gpu/sotc/sotc_patches.h"
-#if !defined(__x86_64__) || !defined(__GNUC__)
-#error This prototype requires x86-64 GCC or Clang (including MinGW).
+#if !defined(__GNUC__)
+#error This project requires GCC or Clang.
 #endif
 #ifdef _WIN32
 #include <windows.h>
@@ -48,6 +51,7 @@ static void fail(const char *message) { fprintf(stderr, "ERROR: %s\n", message);
 /* The PS4's Jaguar CPU has BMI1/LZCNT/MOVBE and the game uses them (ANDN, BEXTR, TZCNT, ...); older
    CPUs raise an illegal instruction or silently compute TZCNT/LZCNT wrong. Fail with a clear message. */
 static void require_cpu_features(void) {
+#ifdef GUEST_CPU_NATIVE
     unsigned a, b, c, d;
     int bmi1 = __get_cpuid_count(7, 0, &a, &b, &c, &d) && (b & 1u << 3);
     int lzcnt = __get_cpuid(0x80000001, &a, &b, &c, &d) && (c & 1u << 5);
@@ -60,6 +64,7 @@ static void require_cpu_features(void) {
     MessageBoxA(NULL, msg, "Shadow of the Colossus", MB_OK | MB_ICONERROR);
 #endif
     fail(msg);
+#endif
 }
 static uint64_t read64(FILE *f) {
     unsigned char b[8];
@@ -198,7 +203,7 @@ static ABI __attribute__((noreturn)) void unresolved(uint32_t id, uintptr_t argu
     fflush(NULL);
     _exit(20); /* no destructors: GPU, audio and guest threads are still running */
 }
-#ifndef _WIN32
+#if !defined(_WIN32) && defined(GUEST_CPU_NATIVE)
 /* enter_on_stack(entry, arg0, arg1, stack_top): call entry(arg0,arg1) on a new stack. */
 void enter_on_stack(void *entry, void *arg0, void *arg1, void *top);
 __asm__(".text\n.globl enter_on_stack\nenter_on_stack:\n"
@@ -832,6 +837,7 @@ static void apply_sotc_cmdline(const char *path, uint64_t size) {
 }
 #ifndef _WIN32
 static void fault(int sig, siginfo_t *info, void *context) {
+    if (guest_cpu_handle_fault(sig, info, context)) return;
     /* GPU page tracking (write-protected guest pages) is resolved first. */
     if (gpu_enabled && sig == SIGSEGV && bbgpu_handle_fault(context, info->si_addr)) return;
     /* A speculative guest memory read (runtime_memory.c) failed: resume its recovery point. */
@@ -845,8 +851,9 @@ static void fault(int sig, siginfo_t *info, void *context) {
         siglongjmp(*recover, 1);
     }
     /* The process is terminating: dladdr/snprintf are acceptable here. */
-    ucontext_t *uc = context;
-    uintptr_t rip = (uintptr_t)uc->uc_mcontext.gregs[REG_RIP];
+    GuestRegs regs;
+    int cpu_state = guest_cpu_signal_regs(context, &regs);
+    uintptr_t rip = cpu_state ? (uintptr_t)regs.rip : guest_cpu_host_pc(context);
     char line[512];
     Dl_info where;
     if (rip - (uintptr_t)image < 0x10000000)
@@ -881,15 +888,19 @@ static void write_hex(char *out, uint64_t v) {
     const char digits[] = "0123456789abcdef";
     for (int i = 0; i < 16; ++i) out[i] = digits[(v >> (60 - i * 4)) & 15];
 }
-static void dump_frames(ucontext_t *uc) {
+static void dump_frames(void *context) {
     char line[] = "  tid=0000000000000000 rip=0000000000000000 image-relative=0000000000000000 host-relative=0000000000000000\n";
-    uintptr_t rip=(uintptr_t)uc->uc_mcontext.gregs[REG_RIP], rbp=(uintptr_t)uc->uc_mcontext.gregs[REG_RBP];
+    GuestRegs regs = {0};
+    int cpu_state = guest_cpu_signal_regs(context, &regs);
+    uintptr_t rip = cpu_state ? (uintptr_t)regs.rip : guest_cpu_host_pc(context);
+    uintptr_t rbp = cpu_state ? (uintptr_t)regs.gpr[GUEST_RBP] : 0;
     uint64_t tid=(uint64_t)gettid();
     /* First argument register: the lock address when a thread waits on a futex. */
     char arg[]="  tid=0000000000000000 rdi=0000000000000000\n";
-    write_hex(arg+6,tid); write_hex(arg+27,(uint64_t)uc->uc_mcontext.gregs[REG_RDI]);
+    write_hex(arg+6,tid);
+    if (cpu_state) write_hex(arg+27,regs.gpr[GUEST_RDI]);
     { ssize_t written_=write(2,arg,sizeof(arg)-1); (void)written_; }
-    for (int depth=0; depth<24; ++depth) {
+    for (int depth=0; cpu_state && depth<24; ++depth) {
         write_hex(line+6,tid); write_hex(line+27,rip); write_hex(line+59,rip-(uintptr_t)image); write_hex(line+90,rip-exe_base);
         { ssize_t written_=write(2,line,sizeof(line)-1); (void)written_; }
         uintptr_t frame[2];
@@ -1118,6 +1129,7 @@ int main(int argc, char **argv) {
     uint64_t capabilities = memcmp(magic, "BBPROBE1", 8) ? read64(f) : 0;
     if (capabilities & ~UINT64_C(1)) fail("unknown runtime capabilities");
     runtime_start(strict_imports ? 0 : capabilities);
+    guest_cpu_init(runtime_low_map);
     if (!size || size > 512*1024*1024 || entry >= size || !ns || ns > 64 || nr > 1000000 || import_count > 100000)
         fail("boot file limits exceeded");
     int multi=!memcmp(magic,"BBPROBE5",8);
@@ -1250,7 +1262,7 @@ int main(int argc, char **argv) {
         unsigned char *t = traps + i * 32;
         /* SysV: mov edi, index; movabs rax, handler; jmp rax. No fake return values. */
         uint32_t index = (uint32_t)i;
-        uintptr_t handler = (uintptr_t)unresolved;
+        uintptr_t handler = guest_cpu_host_function((void *)unresolved);
         t[0] = 0x48; t[1] = 0x89; t[2] = 0xfe; /* mov rsi,rdi: preserve arg0 */
         t[3] = 0xbf; memcpy(t + 4, &index, 4);
         t[8] = 0x48; t[9] = 0xb8; memcpy(t + 10, &handler, 8);
@@ -1263,7 +1275,10 @@ int main(int argc, char **argv) {
         if (relocs[i].kind) {
             uintptr_t resolved = prefer_native(names[relocs[i].value], native_libc && bindings[relocs[i].value])
                                  ? 0 : runtime_resolve(names[relocs[i].value], relocs[i].kind == 2);
-            if (resolved) value = resolved + relocs[i].addend;
+            if (resolved) {
+                value = resolved + relocs[i].addend;
+                if (relocs[i].kind == 1) value = guest_cpu_host_function((void *)value);
+            }
             else if (native_libc && bindings[relocs[i].value]) {
                 uint64_t address=bindings[relocs[i].value];
                 if (binding_kinds[relocs[i].value]!=relocs[i].kind || !mapped(segments,ns,address,relocs[i].addend+1)) fail("native export kind/range mismatch");
@@ -1272,6 +1287,8 @@ int main(int argc, char **argv) {
         }
         memcpy(image + relocs[i].target, &value, 8);
     }
+    guest_cpu_code((uintptr_t)image, round_page(size) + SOTC_TRAMPOLINE_SIZE);
+    guest_cpu_code((uintptr_t)traps, round_page((import_count + 1) * 32));
     /* sotc: BB_LIST_IMPORTS=1 prints how every import is served, then exits. */
     if (getenv("BB_LIST_IMPORTS")) {
         unsigned served[3]={0};
@@ -1298,7 +1315,9 @@ int main(int argc, char **argv) {
 #endif
     if (sotc_cpu) apply_sotc_cpu_patches(sotc_cpu, segments, ns, size);
     if (sotc_cmdline) apply_sotc_cmdline(sotc_cmdline, size);
+#ifdef _WIN32
     if (sotc_cpu) install_heap_hook();
+#endif
     protect(traps, round_page((import_count + 1) * 32), 5);
     protect(image, round_page(size), 0);
     int executable_entry = 0;
@@ -1325,8 +1344,8 @@ int main(int argc, char **argv) {
         /* Dependencies start in link order (libc first), as the PS4 dynamic linker does. */
         for (uint64_t m=0;m<module_count;++m) {
             printf("Starting linked module %" PRIu64 " at image offset 0x%" PRIx64 "; native bindings=%" PRIu64 "\n",m,modules[m].init,nb);
-            typedef int (ABI *ModuleInit)(uint64_t,void *,void *);
-            int result=((ModuleInit)(image+modules[m].init))(0,NULL,NULL);
+            const uint64_t init_args[3] = {0, 0, 0};
+            int result=(int)guest_cpu_call((uintptr_t)(image+modules[m].init),3,init_args);
             printf("Module %" PRIu64 " initializer returned %d\n",m,result);
             if (result) fail("module initializer failed");
         }
@@ -1343,12 +1362,22 @@ int main(int argc, char **argv) {
 #ifdef _WIN32
     typedef void (ABI *Entry)(void *, void (ABI *)(void));
     ((Entry)(image + entry))(&params, guest_exit);
-#else
+#elif defined(GUEST_CPU_NATIVE)
     /* The guest main thread runs on a stack below 1 TiB like PS4 stacks. */
     enum { MAIN_STACK=8*1024*1024 };
     unsigned char *stack=runtime_low_map(MAIN_STACK,PROT_READ|PROT_WRITE);
     if (!stack) fail("cannot allocate guest main stack");
     enter_on_stack(image+entry,&params,(void *)guest_exit,stack+MAIN_STACK-64);
+#else
+    enum { MAIN_STACK=8*1024*1024 };
+    unsigned char *stack=runtime_low_map(MAIN_STACK,PROT_READ|PROT_WRITE);
+    if (!stack) fail("cannot allocate guest main stack");
+    guest_cpu_thread_stack(stack+MAIN_STACK-64,MAIN_STACK-64);
+    const uint64_t entry_args[2] = {
+        (uint64_t)(uintptr_t)&params,
+        (uint64_t)guest_cpu_host_function((void *)guest_exit)
+    };
+    guest_cpu_call((uintptr_t)(image+entry),2,entry_args);
 #endif
     fail("entry unexpectedly returned");
 }

@@ -71,14 +71,20 @@ int guest_cpu_handle_fault(int sig, siginfo_t *info, void *context) {
     (void)context;
     return 0;
 }
+#endif
 
 uint64_t guest_cpu_tsc_frequency(void) {
     static uint64_t hz;
     if (!hz) {
-        struct timespec a, b, nap = {0, 20000000};
+        struct timespec a, b;
         clock_gettime(CLOCK_MONOTONIC, &a);
         uint64_t t0 = __rdtsc();
+#ifdef _WIN32
+        compat_sleep_ns(20000000);
+#else
+        struct timespec nap = {0, 20000000};
         nanosleep(&nap, NULL);
+#endif
         clock_gettime(CLOCK_MONOTONIC, &b);
         uint64_t t1 = __rdtsc();
         uint64_t ns = (uint64_t)(b.tv_sec - a.tv_sec) * 1000000000 +
@@ -87,7 +93,6 @@ uint64_t guest_cpu_tsc_frequency(void) {
     }
     return hz;
 }
-#endif
 #else
 typedef int runtime_cpu_backend_is_built_separately;
 #endif

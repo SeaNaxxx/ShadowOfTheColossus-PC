@@ -7,9 +7,7 @@
  * the same 9-byte instruction with another displacement. */
 #define _GNU_SOURCE
 #include "runtime.h"
-#ifndef _WIN32
 #include "guest_cpu.h"
-#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -41,6 +39,10 @@ typedef struct GuestThread {
     /* Guest-visible TCB is allocated separately; this is the ScePthread handle. */
     uint64_t *tcb;
     unsigned char *tls_block;
+#ifndef GUEST_CPU_NATIVE
+    unsigned char *guest_stack;
+    size_t guest_stack_size;
+#endif
     pthread_t host;
     GuestEntry entry;
     void *argument, *result;
@@ -303,8 +305,14 @@ static void *host_start(void *p) {
     /* sotc: host thread ids of guest threads, for traces that print GetCurrentThreadId. */
     if (getenv("SOTC_THREAD_IDS")) fprintf(stderr,"Runtime: guest thread '%s' is host thread %lu\n",t->name,GetCurrentThreadId());
 #endif
-    if (!exit_setjmp(t)) t->result=t->entry(t->argument);
+#ifndef GUEST_CPU_NATIVE
+    if (t->guest_stack) guest_cpu_thread_stack(t->guest_stack+t->guest_stack_size,t->guest_stack_size);
+#endif
+    const uint64_t argument=(uint64_t)(uintptr_t)t->argument;
+    if (!exit_setjmp(t)) t->result=(void *)(uintptr_t)guest_cpu_call((uintptr_t)t->entry,1,&argument);
+    else guest_cpu_abandon();
     runtime_thread_keys_cleanup();
+    guest_cpu_thread_end();
     pthread_mutex_lock(&lock);
     t->finished=1; ++exited;
 #ifdef _WIN32
@@ -335,6 +343,11 @@ static int32_t create(GuestThread **out,ThreadAttr **attr_slot,GuestEntry entry,
     void *stack_memory=runtime_low_map(stack_bytes,PROT_READ|PROT_WRITE);
     if (stack_memory) pthread_attr_setstack(&host,stack_memory,stack_bytes);
     else pthread_attr_setstacksize(&host,stack_bytes);
+#endif
+#ifndef GUEST_CPU_NATIVE
+    t->guest_stack=runtime_low_map((size_t)stack,PROT_READ|PROT_WRITE);
+    if (!t->guest_stack) { fputs("STOP: cannot allocate a guest thread stack\n",stderr); exit(21); }
+    t->guest_stack_size=(size_t)stack;
 #endif
     publish(t);
     /* Publish the handle before the thread can run and inspect itself. */
