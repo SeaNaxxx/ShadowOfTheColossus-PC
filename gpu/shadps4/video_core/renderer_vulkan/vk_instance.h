@@ -21,6 +21,10 @@ VK_DEFINE_HANDLE(VmaAllocator)
 
 namespace Vulkan {
 
+// VK_DRIVER_ID_MESA_KOSMICKRISP is value 28. Keep this check usable with
+// Vulkan-Hpp headers that predate the name while the driver still reports it.
+inline constexpr u32 MesaKosmicKrispDriverId = 28;
+
 class Instance {
 public:
     explicit Instance(bool validation = false, bool crash_diagnostic = false);
@@ -483,7 +487,7 @@ public:
 
     /// Returns the maximum number of samplers that can be allocated at once.
     u32 GetMaxSamplerAllocationCount() const {
-        if (driver_id == vk::DriverId::eMesaKosmickrisp) {
+        if (static_cast<u32>(driver_id) == MesaKosmicKrispDriverId) {
             // FIXME: KosmicKrisp has an internal 1024 unique sampler limit before
             // vkCreateSampler starts returning VK_ERROR_OUT_OF_HOST_MEMORY. Work
             // around this for now by reducing the value to 1024.

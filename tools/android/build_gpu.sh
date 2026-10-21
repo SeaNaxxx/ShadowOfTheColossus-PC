@@ -56,6 +56,23 @@ if [[ ! -f "$prefix/include/boost/icl/interval_set.hpp" ]]; then
     cp -a "$boost_headers/." "$prefix/include/boost/"
 fi
 
+robin_headers=
+for candidate in "${SOTC_HOST_PREFIX:+$SOTC_HOST_PREFIX/include/tsl}" \
+    /usr/include/tsl /usr/local/include/tsl /opt/homebrew/include/tsl; do
+    if [[ -f "$candidate/robin_map.h" ]]; then
+        robin_headers=$candidate
+        break
+    fi
+done
+if [[ ! -f "$prefix/include/tsl/robin_map.h" ]]; then
+    [[ -n $robin_headers ]] || {
+        echo "Host robin-map headers are required (tsl/robin_map.h was not found)." >&2
+        exit 1
+    }
+    mkdir -p "$prefix/include/tsl"
+    cp -a "$robin_headers/." "$prefix/include/tsl/"
+fi
+
 vulkan_headers=
 for candidate in "${VULKAN_SDK:+$VULKAN_SDK/include/vulkan}" \
     "${SOTC_HOST_PREFIX:+$SOTC_HOST_PREFIX/include/vulkan}" \
