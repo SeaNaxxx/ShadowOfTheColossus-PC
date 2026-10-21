@@ -66,7 +66,7 @@ void FsrPass::Create(vk::Device device, VmaAllocator allocator, u32 num_images) 
 
     descriptor_set_layout =
         Check<"create fsr descriptor set layout">(device.createDescriptorSetLayoutUnique({
-            .flags = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptor,
+            .flags = vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR,
             .bindingCount = layoutBindings.size(),
             .pBindings = layoutBindings.data(),
         }));

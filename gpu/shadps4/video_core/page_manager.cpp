@@ -16,6 +16,12 @@
 #include <shared_mutex>
 #include <atomic>
 #include "common/alignment.h"
+
+#ifndef MAX_PATH
+// Windows gets MAX_PATH from windows.h; the fault-report buffers only need the
+// same fallback value common/path_util.cpp uses on other platforms.
+#define MAX_PATH 1024
+#endif
 #include "common/adaptive_mutex.h"
 #include "common/assert.h"
 #include "common/debug.h"

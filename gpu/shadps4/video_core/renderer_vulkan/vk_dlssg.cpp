@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // sotc: DLSS Frame Generation through NVIDIA Streamline, see vk_dlssg.h.
+// Streamline ships Windows interposer DLLs only, so other platforms get no-ops.
 
 #include "video_core/renderer_vulkan/vk_dlssg.h"
+
+#ifdef _WIN32
+
 #include "video_core/renderer_vulkan/vk_framegen.h"
 #include "video_core/renderer_vulkan/vk_fsrfg.h"
 
@@ -1246,3 +1250,52 @@ bool GetFrameInputs(u32 frame_id, FrameInputs& out) {
 }
 
 } // namespace Vulkan::Dlssg
+
+#else
+
+// Streamline is Windows-only; report DLSS-G as unavailable everywhere else.
+
+namespace Vulkan::Dlssg {
+
+PFN_vkGetInstanceProcAddr LoadInterposer() {
+    return nullptr;
+}
+
+void OnDeviceCreated(const Instance&) {}
+
+bool Enabled() {
+    return false;
+}
+
+bool CapturingInputs() {
+    return false;
+}
+
+bool WantsImmediatePresent() {
+    return false;
+}
+
+void NoteDraw(const AmdGpu::Regs&, u32, VideoCore::ImageId, VideoCore::ImageId,
+              VideoCore::TextureCache&) {}
+
+void PrepareInputs(u32, vk::CommandBuffer, VideoCore::TextureCache&, Runtime&, u32, u32) {}
+
+void NoteHudless(u32, vk::Image, vk::ImageView, vk::Format, u32, u32) {}
+
+void FrameSubmitted(u32) {}
+
+void NoInputs(u32) {}
+
+void BeforePresent(u32, vk::Rect2D, vk::Extent2D) {}
+
+void AfterPresent(u32) {}
+
+void Suspend() {}
+
+bool GetFrameInputs(u32, FrameInputs&) {
+    return false;
+}
+
+} // namespace Vulkan::Dlssg
+
+#endif
