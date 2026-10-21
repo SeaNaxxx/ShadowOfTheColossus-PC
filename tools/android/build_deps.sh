@@ -95,6 +95,8 @@ if [[ ! -f "$prefix/.done-ffmpeg" ]]; then
     ffmpeg_build="$build/ffmpeg"
     mkdir -p "$ffmpeg_build"
     cd "$ffmpeg_build"
+    # The NEON transforms address the global C tables with non-GOT adrp, which ld.lld
+    # rejects inside libmain.so; the C code is PIC-clean and only FFT loses NEON speed.
     "$ffmpeg/configure" --prefix="$prefix" --enable-cross-compile --target-os=android --arch=aarch64 \
         --cc="$llvm/bin/aarch64-linux-android$api-clang" \
         --cxx="$llvm/bin/aarch64-linux-android$api-clang++" \
@@ -103,7 +105,8 @@ if [[ ! -f "$prefix/.done-ffmpeg" ]]; then
         --sysroot="$llvm/sysroot" \
         --enable-static --disable-shared --enable-pic --disable-programs --disable-doc --disable-debug \
         --disable-avdevice --disable-avfilter --disable-network --disable-autodetect \
-        --disable-mediacodec --disable-jni >"$build/ffmpeg-configure.log" 2>&1 || {
+        --disable-mediacodec --disable-jni \
+        --disable-asm >"$build/ffmpeg-configure.log" 2>&1 || {
         tail -40 "$ffmpeg_build/ffbuild/config.log" >&2 2>/dev/null || true
         tail -30 "$build/ffmpeg-configure.log" >&2
         exit 1
