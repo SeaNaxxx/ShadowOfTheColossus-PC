@@ -17,9 +17,26 @@ def prepare_game(game_path, modules_path, output_path):
 
     required = (game / "eboot.bin", game / "sce_sys/param.sfo",
                 game / "sce_module/libc.prx", game / "sce_module/libSceFios2.prx")
-    missing = [str(path.name) for path in required if not path.is_file()]
+    missing = [str(path.relative_to(game)) for path in required if not path.is_file()]
     if missing:
         raise ValueError("Missing required game files: " + ", ".join(missing))
+    for path in required:
+        try:
+            with path.open("rb") as stream:
+                if not stream.read(1):
+                    raise ValueError(f"Required game file is empty: {path.relative_to(game)}")
+        except OSError as error:
+            raise ValueError(f"Cannot read required game file {path.relative_to(game)}: {error}") from error
+
+    resources = game / "dvdroot_ps4"
+    if not resources.is_dir():
+        raise ValueError("Missing required game resource folder: dvdroot_ps4")
+    try:
+        next(resources.iterdir())
+    except StopIteration as error:
+        raise ValueError("Game resource folder is empty: dvdroot_ps4") from error
+    except OSError as error:
+        raise ValueError(f"Cannot list game resource folder dvdroot_ps4: {error}") from error
 
     prepare_eboot(game, output)
     linked_modules = list(DEFAULT_MODULES)

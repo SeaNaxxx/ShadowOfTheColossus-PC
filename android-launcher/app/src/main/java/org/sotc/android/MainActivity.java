@@ -178,9 +178,11 @@ public final class MainActivity extends Activity {
             deleteTree(staging);
             String rootId = DocumentsContract.getTreeDocumentId(tree);
             MapChildren rootChildren = children(tree, rootId);
-            if (!rootChildren.names.contains("eboot.bin") || !rootChildren.names.contains("sce_sys")) {
-                throw new Exception("Select the game folder itself; it must contain eboot.bin and sce_sys/param.sfo");
+            if (!rootChildren.names.contains("eboot.bin") || !rootChildren.names.contains("sce_sys")
+                    || !rootChildren.names.contains("sce_module") || !rootChildren.names.contains("dvdroot_ps4")) {
+                throw new Exception("Select the extracted game folder; it must contain eboot.bin, sce_sys, sce_module, and dvdroot_ps4");
             }
+            requireReadableFile(tree, rootChildren, "eboot.bin");
             String sysId = rootChildren.idsByName.get("sce_sys");
             MapChildren sysChildren = children(tree, sysId);
             String sfoId = sysChildren.idsByName.get("param.sfo");
@@ -190,6 +192,14 @@ public final class MainActivity extends Activity {
             try (InputStream in = getContentResolver().openInputStream(sfo)) {
                 if (in == null) throw new Exception("Cannot read param.sfo");
                 sfoBytes = readAll(in, 1024 * 1024);
+            }
+            String moduleId = rootChildren.idsByName.get("sce_module");
+            MapChildren moduleChildren = children(tree, moduleId);
+            requireReadableFile(tree, moduleChildren, "libc.prx");
+            requireReadableFile(tree, moduleChildren, "libSceFios2.prx");
+            String resourcesId = rootChildren.idsByName.get("dvdroot_ps4");
+            if (children(tree, resourcesId).names.isEmpty()) {
+                throw new Exception("dvdroot_ps4 is empty; select a complete extracted game folder");
             }
             Sfo info = parseSfo(sfoBytes);
             if (!GAME_ID.equals(info.values.get("TITLE_ID"))) {
@@ -348,6 +358,17 @@ public final class MainActivity extends Activity {
             }
         }
         return result;
+    }
+
+    private void requireReadableFile(Uri tree, MapChildren directory, String name) throws Exception {
+        String id = directory.idsByName.get(name.toLowerCase(java.util.Locale.ROOT));
+        if (id == null) throw new Exception("Required game file is missing: " + name);
+        Uri file = DocumentsContract.buildDocumentUriUsingTree(tree, id);
+        try (InputStream in = getContentResolver().openInputStream(file)) {
+            if (in == null || in.read() < 0) throw new Exception("Required game file is empty or unreadable: " + name);
+        } catch (java.io.IOException error) {
+            throw new Exception("Cannot read required game file " + name + ": " + error.getMessage(), error);
+        }
     }
 
     private void refreshStatus() {
