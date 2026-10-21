@@ -817,7 +817,7 @@ void FpsCounter() {
     // Frame generation (vk_framegen.h): DLSS-G (vk_dlssg.cpp) or FSR 3 (vk_fsrfg.cpp).
     switch (Vulkan::FrameGen::Current()) {
     case Vulkan::FrameGen::Mode::Off:
-        ImGui::TextColored(grey, SotcUi::T("Geração de quadros: desligada", "Frame generation: off"));
+        ImGui::TextColored(grey, "%s", SotcUi::T("Geração de quadros: desligada", "Frame generation: off"));
         break;
     case Vulkan::FrameGen::Mode::Dlss:
         if (const int fg = SotcStats::ov_fg_state.load(std::memory_order_relaxed); fg == 1) {
@@ -828,7 +828,7 @@ void FpsCounter() {
             ImGui::TextColored(red, "DLSS-G : erreur (statut %#x)",
                                SotcStats::ov_fg_status.load(std::memory_order_relaxed));
         } else {
-            ImGui::TextColored(grey, SotcUi::T("DLSS-G: aguardando (sem cena 3D)", "DLSS-G: waiting (no 3D scene)"));
+            ImGui::TextColored(grey, "%s", SotcUi::T("DLSS-G: aguardando (sem cena 3D)", "DLSS-G: waiting (no 3D scene)"));
         }
         break;
     case Vulkan::FrameGen::Mode::Fsr:
@@ -837,7 +837,7 @@ void FpsCounter() {
         } else if (fg == 2) {
             ImGui::TextColored(red, "FSR 3 : erreur (voir le journal)");
         } else {
-            ImGui::TextColored(grey, SotcUi::T("FSR 3: aguardando (sem cena 3D)", "FSR 3: waiting (no 3D scene)"));
+            ImGui::TextColored(grey, "%s", SotcUi::T("FSR 3: aguardando (sem cena 3D)", "FSR 3: waiting (no 3D scene)"));
         }
         break;
     }
