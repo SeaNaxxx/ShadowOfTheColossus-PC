@@ -7,6 +7,9 @@
  * the same 9-byte instruction with another displacement. */
 #define _GNU_SOURCE
 #include "runtime.h"
+#ifndef _WIN32
+#include "guest_cpu.h"
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,9 +21,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #else
-#include <sys/syscall.h>
 #include <sys/mman.h>
-#include <asm/prctl.h>
 #endif
 #define ERR(n) ((int32_t)(UINT32_C(0x80020000)|(n)))
 #define ATTR_MAGIC UINT32_C(0x41545452)
@@ -114,9 +115,7 @@ static void set_gs(void *base) {
 }
 #define tls_block_alloc(size) _aligned_malloc(size,64)
 #else
-static void set_gs(void *base) {
-    if (syscall(SYS_arch_prctl,ARCH_SET_GS,(unsigned long)base)) { perror("STOP: arch_prctl(ARCH_SET_GS)"); exit(21); }
-}
+static void set_gs(void *base) { guest_cpu_set_gs_base(base); }
 #define tls_block_alloc(size) aligned_alloc(64,size)
 #endif
 /* Build TCB/static TLS for the calling host thread and point GS at it. */
