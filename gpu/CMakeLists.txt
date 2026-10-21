@@ -75,7 +75,7 @@ endif()
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(XXHASH REQUIRED IMPORTED_TARGET libxxhash)
 pkg_check_modules(SDL3 REQUIRED IMPORTED_TARGET sdl3)
-if (NOT WIN32)
+if (NOT WIN32 AND NOT ANDROID)
     pkg_check_modules(X11 REQUIRED IMPORTED_TARGET x11)
 endif()
 find_package(miniz QUIET)
@@ -151,9 +151,8 @@ set(COMMON
 file(GLOB AVPLAYER CONFIGURE_DEPENDS shadps4/core/libraries/avplayer/*.cpp)
 pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET libavformat libavcodec libavutil libswscale libswresample)
 file(GLOB SHIM_SOURCES CONFIGURE_DEPENDS shim/*.cpp shim/*/*.cpp sotc/*.cpp)
-# Windows: a DLL cannot leave the runtime_* symbols for bb-probe.exe to resolve, so the
-# library is static there and linked into the executable.
-if (WIN32)
+# Windows/Android: the loader and GPU HLE must resolve runtime_* symbols in one link unit.
+if (WIN32 OR ANDROID)
     set(BBGPU_KIND STATIC)
 else()
     set(BBGPU_KIND SHARED)
@@ -259,7 +258,7 @@ target_include_directories(bbgpu PRIVATE shim shadps4 ${SHADER_INCLUDE} third_pa
 target_compile_definitions(bbgpu PRIVATE BOOST_ASIO_STANDALONE NDEBUG)
 target_compile_options(bbgpu PRIVATE -Wno-deprecated-declarations -Wno-missing-field-initializers)
 # Runtime symbols (runtime_memory_*, runtime_process_*) resolve against bb-probe.
-if (NOT WIN32)
+if (NOT WIN32 AND NOT ANDROID)
     target_link_options(bbgpu PRIVATE -Wl,--allow-shlib-undefined)
 endif()
 target_link_libraries(bbgpu PUBLIC Vulkan::Headers fmt::fmt Boost::headers magic_enum::magic_enum
@@ -272,11 +271,15 @@ if (WIN32)
     target_include_directories(bbgpu PRIVATE third_party/xbyak)
     target_link_libraries(bbgpu PUBLIC Vulkan::Vulkan ws2_32 bcrypt ntdll synchronization winmm)
 else()
-    target_link_libraries(bbgpu PUBLIC PkgConfig::X11)
+    if (NOT ANDROID)
+        target_link_libraries(bbgpu PUBLIC PkgConfig::X11)
+    else()
+        target_link_libraries(bbgpu PUBLIC android)
+    endif()
 endif()
 
-# bbport (Windows): bbgpu is a static library there, so the loader and the HLE runtime are
-# linked here, where CMake knows its dependencies (build.sh builds them with ninja).
+# bbport (Windows/Android): bbgpu is static, so the loader and HLE runtime can resolve each
+# other's symbols in the same link unit. Android's SDLActivity loads the shared entry library.
 if (WIN32)
     enable_language(RC)
     file(GLOB BB_RUNTIME CONFIGURE_DEPENDS ../src/runtime*.c)
@@ -295,6 +298,29 @@ if (WIN32)
     target_link_options(bb-probe PRIVATE -Wl,--disable-high-entropy-va "SHELL:-Xlinker --stack -Xlinker 16777216,16777216")
     add_executable(bb-gpu-capabilities ../tools/gpu_capabilities.c ../packaging/windows/bb-gpu-capabilities.rc)
     target_link_libraries(bb-gpu-capabilities PRIVATE Vulkan::Vulkan)
+elseif (ANDROID)
+    find_package(Threads REQUIRED)
+    file(GLOB BB_RUNTIME CONFIGURE_DEPENDS ../src/runtime*.c)
+    list(FILTER BB_RUNTIME EXCLUDE REGEX "runtime_cpu\\.c$")
+    file(GLOB BB_ATRAC9 CONFIGURE_DEPENDS ../third_party/LibAtrac9/C/src/*.c)
+    add_library(atrac9 STATIC ${BB_ATRAC9})
+    target_compile_options(atrac9 PRIVATE -w)
+    set_target_properties(atrac9 PROPERTIES C_STANDARD 99 POSITION_INDEPENDENT_CODE ON)
+
+    set(SOTC_CPU_LIBRARY "" CACHE FILEPATH "Path to the Android FEXCore guest CPU library")
+    if (NOT EXISTS "${SOTC_CPU_LIBRARY}")
+        message(FATAL_ERROR "Set SOTC_CPU_LIBRARY to out/android-arm64/lib/libsotc_cpu.so")
+    endif()
+    add_library(sotc_cpu SHARED IMPORTED GLOBAL)
+    set_target_properties(sotc_cpu PROPERTIES IMPORTED_LOCATION "${SOTC_CPU_LIBRARY}")
+
+    add_library(main SHARED ../src/probe.c ${BB_RUNTIME} ../src/vulkan_smoke.c)
+    set_target_properties(main PROPERTIES C_STANDARD 11 C_EXTENSIONS OFF
+        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/../lib")
+    target_compile_definitions(main PRIVATE SOTC_ANDROID_ENTRY)
+    target_compile_options(main PRIVATE $<$<COMPILE_LANGUAGE:C>:-Wall -Wextra -Werror>)
+    target_include_directories(main PRIVATE .. ../src)
+    target_link_libraries(main PRIVATE bbgpu atrac9 sotc_cpu dl log android Threads::Threads m)
 endif()
 
 # Explicit test targets; neither launches the game nor needs a Vulkan device.
@@ -339,4 +365,3 @@ add_executable(upscaler-support-test EXCLUDE_FROM_ALL ../tests/test_upscaler_sup
     shim/bbport_settings.cpp)
 target_include_directories(upscaler-support-test PRIVATE shim)
 target_compile_options(upscaler-support-test PRIVATE -UNDEBUG)
-

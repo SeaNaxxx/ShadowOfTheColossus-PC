@@ -136,18 +136,12 @@ def render_patches(elf, ph, size):
     return writes
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('game', type=Path)
-    parser.add_argument('--out', type=Path, default=Path(__file__).resolve().parent.parent / 'out')
-    parser.add_argument('--modes', default='', help='comma-separated: ' + ', '.join([*MODES, *CVAR_MODES]))
-    parser.add_argument('--cvars', default='', help='engine cvars NAME=VALUE separated by spaces')
-    parser.add_argument('--render', default='', help='render size WxH instead of 1920x1080, e.g. 3840x1600')
-    args = parser.parse_args()
-    elf, _, ph, _, _ = parse_self((args.game / 'eboot.bin').read_bytes())
+def prepare(game, out, modes='', cvars_text='', render=''):
+    game, out = Path(game), Path(out)
+    elf, _, ph, _, _ = parse_self((game / 'eboot.bin').read_bytes())
     supported = is_supported(elf, ph)
     writes, cvars = [], []
-    for mode in filter(None, (m.strip().lower() for m in args.modes.split(','))):
+    for mode in filter(None, (m.strip().lower() for m in modes.split(','))):
         if mode not in MODES and mode not in CVAR_MODES:
             raise SystemExit(f'unknown mode {mode!r} (known: {", ".join([*MODES, *CVAR_MODES])})')
         if not supported:
@@ -156,13 +150,13 @@ def main():
         writes += [(address - BASE, data) for address, _, data in MODES.get(mode, [])]
         cvars += CVAR_MODES.get(mode, [])
         print(f'Mode {mode}: on')
-    if args.render and args.render != '1920x1080':
+    if render and render != '1920x1080':
         if supported:
-            writes += render_patches(elf, ph, args.render)
-            print(f'Render size {args.render}: on')
+            writes += render_patches(elf, ph, render)
+            print(f'Render size {render}: on')
         else:
-            print(f'Render size {args.render}: this eboot is not EU 1.01, not applied')
-    for item in args.cvars.split():
+            print(f'Render size {render}: this eboot is not EU 1.01, not applied')
+    for item in cvars_text.split():
         item = item.lstrip('+')
         if not CVAR.match(item):
             raise SystemExit(f'bad cvar {item!r} (NAME=VALUE or NAME)')
@@ -170,13 +164,25 @@ def main():
     blob = struct.pack('<8sQQ', b'BBPATCH2', BASE, len(writes))
     for offset, data in writes:
         blob += struct.pack('<QQ', offset, len(data)) + data
-    (args.out / 'patches.bin').write_bytes(blob)
-    cmdline = args.out / 'cmdline.bin'
+    out.mkdir(parents=True, exist_ok=True)
+    (out / 'patches.bin').write_bytes(blob)
+    cmdline = out / 'cmdline.bin'
     if supported and cvars:
         text = ' '.join([CMDLINE_ORIGINAL, *('+' + c for c in cvars)])
         cmdline.write_bytes(struct.pack('<8sQ', b'SOTCCMD1', CMDLINE_LEA - BASE) + text.encode('ascii'))
     elif cmdline.exists():
         cmdline.unlink()
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('game', type=Path)
+    parser.add_argument('--out', type=Path, default=Path(__file__).resolve().parent.parent / 'out')
+    parser.add_argument('--modes', default='', help='comma-separated: ' + ', '.join([*MODES, *CVAR_MODES]))
+    parser.add_argument('--cvars', default='', help='engine cvars NAME=VALUE separated by spaces')
+    parser.add_argument('--render', default='', help='render size WxH instead of 1920x1080, e.g. 3840x1600')
+    args = parser.parse_args()
+    prepare(args.game, args.out, args.modes, args.cvars, args.render)
 
 
 if __name__ == '__main__':

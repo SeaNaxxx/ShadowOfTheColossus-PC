@@ -38,6 +38,7 @@ typedef struct ThreadAttr {
 typedef struct GuestThread {
     /* Guest-visible TCB is allocated separately; this is the ScePthread handle. */
     uint64_t *tcb;
+    uint64_t *dtv;
     unsigned char *tls_block;
 #ifndef GUEST_CPU_NATIVE
     unsigned char *guest_stack;
@@ -118,8 +119,31 @@ static void set_gs(void *base) {
 #define tls_block_alloc(size) _aligned_malloc(size,64)
 #else
 static void set_gs(void *base) { guest_cpu_set_gs(base); }
+#ifdef __ANDROID__
+#define tls_block_alloc(size) runtime_low_map(size,PROT_READ|PROT_WRITE)
+#else
 #define tls_block_alloc(size) aligned_alloc(64,size)
 #endif
+#endif
+/* Thread handles, TCBs and TLS are visible to x86 guest code. Android's Bionic allocator places
+ * its heap above the game's 40-bit address window, so give these objects low guest addresses. */
+static void *guest_visible_calloc(size_t count, size_t size) {
+    if (size && count > SIZE_MAX / size) return NULL;
+#ifdef __ANDROID__
+    void *memory=runtime_low_map(count*size,PROT_READ|PROT_WRITE);
+    if (memory) memset(memory,0,count*size);
+    return memory;
+#else
+    return calloc(count,size);
+#endif
+}
+static void guest_visible_free(void *memory) {
+#ifndef __ANDROID__
+    free(memory);
+#else
+    (void)memory; /* runtime_low_map is a monotonic address allocator */
+#endif
+}
 /* Build TCB/static TLS for the calling host thread and point GS at it. */
 static void attach(GuestThread *t) {
     uint64_t offset=tls_offset();
@@ -129,16 +153,22 @@ static void attach(GuestThread *t) {
     memset(block,0,total);
     if (tls_filesz) memcpy(block,tls_template,tls_filesz);
     uint64_t *tcb=(uint64_t *)(block+offset);
+#ifdef __ANDROID__
+    t->dtv=runtime_low_map(3*sizeof(uint64_t),PROT_READ|PROT_WRITE);
+    if (!t->dtv) { fputs("Cannot allocate guest TLS vector\n",stderr); exit(1); }
+#else
     static uint64_t dtv[3];
+    t->dtv=dtv;
+#endif
     tcb[0]=(uint64_t)(uintptr_t)tcb;         /* tcb_self */
-    tcb[1]=(uint64_t)(uintptr_t)dtv;         /* tcb_dtv (static module only) */
+    tcb[1]=(uint64_t)(uintptr_t)t->dtv;      /* tcb_dtv (static module only) */
     tcb[2]=(uint64_t)(uintptr_t)t;           /* tcb_thread */
     t->tls_block=block; t->tcb=tcb;
     set_gs(tcb);
     current=t;
 }
 static GuestThread *new_thread(void) {
-    GuestThread *t=calloc(1,sizeof(*t));
+    GuestThread *t=guest_visible_calloc(1,sizeof(*t));
     if (!t) return NULL;
     t->attr=(ThreadAttr){.magic=ATTR_MAGIC,.policy=1,.prio=DEFAULT_PRIO,.stack=DEFAULT_STACK,.affinity=0x7f};
     return t;
@@ -189,7 +219,7 @@ int32_t *runtime_errno(void) { return &guest_errno; }
 
 static ABI int32_t attr_init(ThreadAttr **out) {
     if (!out) return ERR(22);
-    ThreadAttr *a=calloc(1,sizeof(*a));
+    ThreadAttr *a=guest_visible_calloc(1,sizeof(*a));
     if (!a) return ERR(12);
     *a=(ThreadAttr){.magic=ATTR_MAGIC,.policy=1,.prio=DEFAULT_PRIO,.inherit=4,.stack=DEFAULT_STACK,.guard=4096,.affinity=0x7f};
     pthread_mutex_lock(&lock); a->next=attributes; attributes=a; pthread_mutex_unlock(&lock);
@@ -203,7 +233,7 @@ static ABI int32_t attr_destroy(ThreadAttr **slot) {
     while (*link!=a) link=&(*link)->next;
     *link=a->next; a->magic=0;
     pthread_mutex_unlock(&lock);
-    free(a); *slot=NULL; return 0;
+    guest_visible_free(a); *slot=NULL; return 0;
 }
 static ABI int32_t attr_get(void *thread,ThreadAttr **out) {
     ThreadAttr *a=find_attr(out);
@@ -460,4 +490,3 @@ void runtime_thread_report(void) {
     printf("Runtime: guest threads created=%zu, exited=%zu, joined=%zu\n",created,exited,joined_count);
     pthread_mutex_unlock(&lock);
 }
-

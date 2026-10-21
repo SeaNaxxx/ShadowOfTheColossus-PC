@@ -2,6 +2,7 @@
 package org.sotc.android;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
@@ -16,10 +17,14 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import com.chaquo.python.PyException;
+import com.chaquo.python.Python;
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
@@ -30,7 +35,7 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** Minimal SAF importer. The Android CPU/GPU runtime is not integrated yet. */
+/** Imports the user's extracted game and starts the native Android runtime. */
 public final class MainActivity extends Activity {
     private static final int PICK_GAME = 1;
     private static final int PICK_MODULES = 2;
@@ -43,6 +48,8 @@ public final class MainActivity extends Activity {
     private TextView activityStatus;
     private Button importGameButton;
     private Button importModulesButton;
+    private Button launchGameButton;
+    private Button runtimeLogButton;
     private File dataRoot;
 
     @Override
@@ -58,6 +65,12 @@ public final class MainActivity extends Activity {
     protected void onDestroy() {
         worker.shutdownNow();
         super.onDestroy();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (runtimeLogButton != null) refreshStatus();
     }
 
     private View createScreen() {
@@ -97,10 +110,18 @@ public final class MainActivity extends Activity {
         importModulesButton.setOnClickListener(view -> chooseSoundModules());
 
         content.addView(section("Runtime"), params(0, dp(24), 0, 0));
-        content.addView(text("The ARM64 Android runtime and game launch path are not integrated yet. This APK currently handles game-data import only.", 14, 0xffe6d8b5), matchWrap());
+        content.addView(text("The launcher prepares the imported game image, then starts the ARM64 runtime.", 14, 0xffc6c7c9), matchWrap());
+        launchGameButton = button("Prepare and launch game");
+        launchGameButton.setEnabled(false);
+        content.addView(launchGameButton, matchWrap());
+        launchGameButton.setOnClickListener(view -> prepareAndLaunch());
         activityStatus = text("Ready", 13, 0xff9fa3a8);
         activityStatus.setPadding(0, dp(18), 0, 0);
         content.addView(activityStatus, matchWrap());
+        runtimeLogButton = button("View runtime log");
+        content.addView(runtimeLogButton, matchWrap());
+        runtimeLogButton.setEnabled(false);
+        runtimeLogButton.setOnClickListener(view -> showRuntimeLog());
 
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
@@ -196,6 +217,39 @@ public final class MainActivity extends Activity {
             deleteTree(staging);
             finishImport("Game import failed: " + message(error));
         }
+    }
+
+    private void prepareAndLaunch() {
+        File game = new File(dataRoot, "game");
+        if (!new File(game, "eboot.bin").isFile()) {
+            activityStatus.setText("Import the extracted CUSA08809 game folder first.");
+            return;
+        }
+        beginImport("Preparing game image…");
+        worker.execute(() -> {
+            File runtime = new File(dataRoot, "runtime");
+            try {
+                if (!runtime.isDirectory() && !runtime.mkdirs()) throw new Exception("Cannot create runtime folder");
+                if (!Python.isStarted()) Python.start(new com.chaquo.python.android.AndroidPlatform(getApplicationContext()));
+                String result = Python.getInstance().getModule("android_prepare").callAttr("prepare_game",
+                        game.getAbsolutePath(), new File(dataRoot, "sys_modules").getAbsolutePath(),
+                        runtime.getAbsolutePath()).toString();
+                main.post(() -> {
+                    importGameButton.setEnabled(true);
+                    importModulesButton.setEnabled(true);
+                    launchGameButton.setEnabled(true);
+                    activityStatus.setText(result);
+                    Intent intent = new Intent(this, GameActivity.class);
+                    intent.putExtra(GameActivity.EXTRA_GAME_DIR, game.getAbsolutePath());
+                    intent.putExtra(GameActivity.EXTRA_RUNTIME_DIR, runtime.getAbsolutePath());
+                    intent.putExtra(GameActivity.EXTRA_USER_DIR, new File(dataRoot, "user").getAbsolutePath());
+                    startActivity(intent);
+                });
+            } catch (Exception error) {
+                String detail = error instanceof PyException ? error.getMessage() : message(error);
+                finishImport("Game preparation failed: " + detail);
+            }
+        });
     }
 
     private void importModules(List<Uri> uris) {
@@ -300,15 +354,38 @@ public final class MainActivity extends Activity {
         File game = new File(dataRoot, "game");
         gameStatus.setText(game.isDirectory() && new File(game, "eboot.bin").isFile()
                 ? "Game: imported (CUSA08809 EU 01.01)" : "Game: not imported");
+        launchGameButton.setEnabled(game.isDirectory() && new File(game, "eboot.bin").isFile());
+        runtimeLogButton.setEnabled(new File(new File(dataRoot, "user"), "last_run.log").isFile());
         File modules = new File(dataRoot, "sys_modules");
         int count = 0;
         for (String name : MODULES) if (new File(modules, name).isFile()) count++;
         moduleStatus.setText("Sound modules: " + count + " of 2 imported");
     }
 
+    private void showRuntimeLog() {
+        File logFile = new File(new File(dataRoot, "user"), "last_run.log");
+        try (RandomAccessFile file = new RandomAccessFile(logFile, "r")) {
+            long length = file.length();
+            int count = (int) Math.min(length, 1024 * 1024);
+            file.seek(length - count);
+            byte[] bytes = new byte[count];
+            file.readFully(bytes);
+            String prefix = length > count ? "Showing the last 1 MiB of the log.\n\n" : "";
+            TextView contents = text(prefix + new String(bytes, StandardCharsets.UTF_8), 11, 0xffe6d8b5);
+            ScrollView scroll = new ScrollView(this);
+            scroll.setPadding(dp(12), dp(8), dp(12), dp(8));
+            scroll.addView(contents);
+            new AlertDialog.Builder(this).setTitle("Runtime log").setView(scroll)
+                    .setPositiveButton("Close", null).show();
+        } catch (Exception error) {
+            activityStatus.setText("Cannot read runtime log: " + message(error));
+        }
+    }
+
     private void beginImport(String message) {
         importGameButton.setEnabled(false);
         importModulesButton.setEnabled(false);
+        launchGameButton.setEnabled(false);
         activityStatus.setText(message);
     }
 
@@ -316,6 +393,7 @@ public final class MainActivity extends Activity {
         main.post(() -> {
             importGameButton.setEnabled(true);
             importModulesButton.setEnabled(true);
+            launchGameButton.setEnabled(new File(new File(dataRoot, "game"), "eboot.bin").isFile());
             activityStatus.setText(message);
             refreshStatus();
         });

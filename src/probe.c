@@ -33,6 +33,9 @@
 #include <sys/syscall.h>
 #include <sys/uio.h>
 #endif
+#if defined(SOTC_ANDROID_ENTRY)
+#include <sys/stat.h>
+#endif
 
 typedef struct { uint64_t address, size, flags; } Segment;
 typedef struct { uint64_t target, kind, value, addend; } Reloc;
@@ -1027,16 +1030,41 @@ void runtime_restart(void) {
 #endif
 }
 
-int main(int argc, char **argv) {
+#ifdef SOTC_ANDROID_ENTRY
+#define SOTC_MAIN_NAME sotc_main
+#else
+#define SOTC_MAIN_NAME main
+#endif
+int SOTC_MAIN_NAME(int argc, char **argv) {
+#ifdef SOTC_ANDROID_ENTRY
+    fflush(NULL);
+    for (int i=2;i+1<argc;++i) {
+        if (strcmp(argv[i],"--user")) continue;
+        const char *user=argv[i+1];
+        mkdir(user,0700);
+        char path[4096];
+        int length=snprintf(path,sizeof(path),"%s/last_run.log",user);
+        if (length>0 && (size_t)length<sizeof(path)) {
+            int log=open(path,O_WRONLY|O_CREAT|O_TRUNC|O_CLOEXEC,0600);
+            if (log>=0) {
+                dup2(log,STDOUT_FILENO);
+                dup2(log,STDERR_FILENO);
+                close(log);
+            }
+        }
+    }
+#endif
     setvbuf(stdout, NULL, _IONBF, 0);
 #ifdef _WIN32
     reserve_eboot_range();
 #endif
 #ifndef _WIN32
+#if defined(__GLIBC__)
     /* Keep host heap objects handed to the guest (thread handles, TLS) in the
        non-PIE brk heap, i.e. below 1 TiB: the guest packs pointers into 40 bits. */
     mallopt(M_ARENA_MAX,1);
     mallopt(M_MMAP_THRESHOLD,32*1024*1024);
+#endif
 #endif
     if (argc == 2 && !strcmp(argv[1], "--vulkan-only")) return vulkan_smoke();
 #ifdef _WIN32
@@ -1113,7 +1141,7 @@ int main(int argc, char **argv) {
     sigemptyset(&sa.sa_mask);
     sigaction(SIGSEGV, &sa, NULL); sigaction(SIGILL, &sa, NULL); sigaction(SIGBUS, &sa, NULL);
     Dl_info self_info;
-    if (dladdr((void *)main,&self_info)) exe_base=(uintptr_t)self_info.dli_fbase;
+    if (dladdr((void *)SOTC_MAIN_NAME,&self_info)) exe_base=(uintptr_t)self_info.dli_fbase;
     struct sigaction dump = {0}; dump.sa_sigaction = thread_dump; dump.sa_flags = SA_SIGINFO|SA_RESTART;
     sigemptyset(&dump.sa_mask); sigaction(SIGUSR2, &dump, NULL);
     struct sigaction alarm_action = {0}; alarm_action.sa_sigaction = watchdog; alarm_action.sa_flags = SA_SIGINFO;
