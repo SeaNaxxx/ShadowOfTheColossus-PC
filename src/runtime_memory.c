@@ -232,10 +232,6 @@ uint64_t runtime_memory_carve_splits(void) { return __atomic_exchange_n(&carve_s
 static void *carve_stopped[256];
 static size_t carve_nstopped;
 static int carve_stopping;
-#else
-/* The carve path (thread suspension, live view splits) is Windows-only; Flip's report
- * omits the line when the count is 0. */
-uint64_t runtime_memory_carve_splits(void) { return 0; }
 #endif
 static void carve_resume_on_fail(void) {
 #ifdef _WIN32
@@ -344,6 +340,9 @@ static int pool(void) {
     return backing_base ? 0 : -1;
 }
 #else
+/* The carve path (thread suspension, live view splits) is Windows-only; Flip's report
+ * omits the line when the count is 0. */
+uint64_t runtime_memory_carve_splits(void) { return 0; }
 /* Direct memory occupies [0,POOL_SIZE) of the memfd, flexible memory [POOL_SIZE,+FLEX_SPAN). */
 #if defined(__ANDROID__) && __ANDROID_API__ < 29
 /* Bionic declares memfd_create() only from API 29; the syscall exists on every kernel. */
