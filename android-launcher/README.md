@@ -6,7 +6,7 @@ Android activity.
 
 ## Build
 
-Install JDK 17, Android SDK Platform 37, NDK 29.0.14206865, CMake, Ninja, Python 3, the host
+Install JDK 17, Android SDK Platform 36, NDK 29.0.14206865, CMake, Ninja, Python 3, the host
 Vulkan SDK (`glslangValidator`), and the GPU build's host header packages, then run:
 
 ```sh

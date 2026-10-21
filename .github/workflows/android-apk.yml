@@ -36,7 +36,7 @@ jobs:
 
       - name: Install Android SDK and host build dependencies
         run: |
-          sdkmanager --install "platforms;android-37" "ndk;29.0.14206865"
+          sdkmanager --install "platforms;android-36" "ndk;29.0.14206865"
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \

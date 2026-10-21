@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "org.sotc.android"
-    compileSdk = 37
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "org.sotc.android"
