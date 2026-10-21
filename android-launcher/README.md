@@ -14,6 +14,8 @@ Vulkan SDK (`glslangValidator`), and the GPU build's host header packages, then 
 ```
 
 The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
+The Android Actions workflow builds the same APK on `android-port` and publishes it as a workflow
+artifact.
 
 The APK build cross-builds FEXCore, SDL3, fmt, xxHash, FFmpeg, Zydis, and the native loader for
 arm64-v8a, then packages their shared libraries. The GPU build also needs the host-side Boost,

@@ -9,7 +9,8 @@ if [[ -z $ndk || ! -f "$ndk/build/cmake/android.toolchain.cmake" ]]; then
     for candidate in \
         "${ANDROID_SDK_ROOT:-}/ndk/29.0.14206865" \
         "${ANDROID_HOME:-}/ndk/29.0.14206865" \
-        "$HOME/Android/Sdk/ndk/29.0.14206865"; do
+        "$HOME/Android/Sdk/ndk/29.0.14206865" \
+        "$HOME/Library/Android/sdk/ndk/29.0.14206865"; do
         if [[ -f "$candidate/build/cmake/android.toolchain.cmake" ]]; then ndk=$candidate; break; fi
     done
 fi
