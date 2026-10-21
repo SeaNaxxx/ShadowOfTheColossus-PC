@@ -36,6 +36,26 @@ cpu="$repo/out/android-arm64/lib/libsotc_cpu.so"
     exit 1
 }
 
+# This is a cross-build: NDK Clang ignores the host's /usr/include by design.
+# Put the header-only Boost tree under the Android dependency prefix so the
+# Vulkan target can include it without adding the host system headers wholesale.
+boost_headers=
+for candidate in "${SOTC_HOST_PREFIX:+$SOTC_HOST_PREFIX/include/boost}" \
+    /usr/include/boost /usr/local/include/boost /opt/homebrew/include/boost; do
+    if [[ -f "$candidate/icl/interval_set.hpp" ]]; then
+        boost_headers=$candidate
+        break
+    fi
+done
+if [[ ! -f "$prefix/include/boost/icl/interval_set.hpp" ]]; then
+    [[ -n $boost_headers ]] || {
+        echo "Host Boost headers are required (boost/icl/interval_set.hpp was not found)." >&2
+        exit 1
+    }
+    mkdir -p "$prefix/include/boost"
+    cp -a "$boost_headers/." "$prefix/include/boost/"
+fi
+
 for path in gpu/third_party/fsr-vulkan gpu/third_party/imgui gpu/third_party/magic_enum \
     gpu/third_party/miniz third_party/LibAtrac9; do
     if [[ ! -f "$path/CMakeLists.txt" && ! -f "$path/imgui.h" ]]; then
@@ -59,6 +79,8 @@ cmake -S gpu -B "$build" -G Ninja \
     -DCMAKE_PREFIX_PATH="$prefix${SOTC_HOST_PREFIX:+;$SOTC_HOST_PREFIX}" \
     -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
     -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=BOTH \
+    -DBoost_NO_BOOST_CMAKE=ON \
+    -DBoost_INCLUDE_DIR="$prefix/include" \
     -DSOTC_CPU_LIBRARY="$cpu" \
     -DBB_LTO=OFF -DBB_PGO=off >/dev/null
 
