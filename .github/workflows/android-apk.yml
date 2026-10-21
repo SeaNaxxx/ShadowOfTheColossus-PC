@@ -43,6 +43,18 @@ jobs:
             cmake ninja-build pkg-config glslang-tools \
             libboost-dev libvulkan-dev robin-map-dev libvulkan-memory-allocator-dev
 
+      - name: Fetch pinned Vulkan headers
+        run: |
+          # The GPU core targets modern Vulkan-Hpp (maintenance8, KosmicKrisp driver id,
+          # unsuffixed divisor structs); Ubuntu 24.04 ships 1.3.x headers. Pin the SDK
+          # version build_gpu.sh picks up through VULKAN_SDK.
+          curl -fsSL https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/vulkan-sdk-1.4.363.0.tar.gz \
+            -o /tmp/vulkan-headers.tar.gz
+          echo "4a078be12bef21cfebc09d878b77a63cff9d68f899254a0b00d0e37ef73e7f7e  /tmp/vulkan-headers.tar.gz" | sha256sum --check --status
+          mkdir -p /opt/vulkan-headers-1.4.363.0
+          tar -xzf /tmp/vulkan-headers.tar.gz -C /opt/vulkan-headers-1.4.363.0 --strip-components=1
+          echo "VULKAN_SDK=/opt/vulkan-headers-1.4.363.0" >> "$GITHUB_ENV"
+
       - name: Build debug APK
         working-directory: android-launcher
         run: ./gradlew --no-daemon :app:assembleDebug
