@@ -126,6 +126,8 @@ api=${SOTC_ANDROID_API:-28}
 build="$repo/out/android-arm64/gpu"
 mkdir -p "$repo/out/android-arm64/lib"
 
+# The pkg-config imported targets hand the linker bare -l names; a cross build has no
+# default search path for the prefix, so the linker must be told where the deps live.
 cmake -S gpu -B "$build" -G Ninja \
     -DCMAKE_TOOLCHAIN_FILE="$ndk/build/cmake/android.toolchain.cmake" \
     -DANDROID_ABI=arm64-v8a \
@@ -133,6 +135,7 @@ cmake -S gpu -B "$build" -G Ninja \
     -DANDROID_STL=c++_shared \
     -DCMAKE_BUILD_TYPE=RelWithDebInfo \
     -DCMAKE_PREFIX_PATH="$prefix${SOTC_HOST_PREFIX:+;$SOTC_HOST_PREFIX}" \
+    -DCMAKE_SHARED_LINKER_FLAGS="-L$prefix/lib" \
     -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
     -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=BOTH \
     -DBoost_NO_BOOST_CMAKE=ON \
