@@ -157,3 +157,12 @@ fi
     exit 1
 }
 echo "Built Android ARM64 native entry library: $repo/out/android-arm64/lib/libmain.so"
+
+# Gradle's jniLibs only accepts the <abi>/lib*.so layout; collect the runtime's native
+# set for the APK after every native component exists.
+jni="$repo/out/android-arm64/jni/arm64-v8a"
+mkdir -p "$jni"
+for lib in libmain.so libsotc_cpu.so libc++_shared.so libSDL3.so; do
+    cp "$repo/out/android-arm64/lib/$lib" "$jni/$lib"
+done
+echo "Packaged APK native libs in $jni"

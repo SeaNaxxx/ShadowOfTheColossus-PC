@@ -21,7 +21,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    sourceSets.getByName("main").jniLibs.srcDir("../../out/android-arm64/lib")
+    sourceSets.getByName("main").jniLibs.srcDir("../../out/android-arm64/jni")
     sourceSets.getByName("main").java.srcDir("../../out/android-arm64/deps/SDL3-3.2.10/android-project/app/src/main/java")
 }
 
