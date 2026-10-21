@@ -27,9 +27,9 @@ are outside the standard search paths. The native runtime can be built separatel
 
 First, use a PS4 PKG Extractor app to extract your own game PKG. Then select the resulting
 `CUSA08809` base-game folder in this launcher. Before copying it, the launcher checks that
-`eboot.bin`, `sce_sys/param.sfo`, `sce_module/libc.prx`, `sce_module/libSceFios2.prx`, and a
-non-empty `dvdroot_ps4/` resource folder exist and can be read. It also verifies title ID
-`CUSA08809` and EU version `01.01`, then copies the folder into app-specific storage under
+`eboot.bin`, `sce_sys/param.sfo`, `sce_module/libc.prx`, and `sce_module/libSceFios2.prx` exist
+and can be read. It also verifies title ID `CUSA08809` and EU version `01.01`, then copies the
+folder into app-specific storage under
 `Android/data/org.sotc.android/files/SotC/game`. PKG extraction is handled by that separate app;
 this launcher imports the extracted game folder.
 

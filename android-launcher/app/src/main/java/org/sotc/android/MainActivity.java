@@ -179,8 +179,8 @@ public final class MainActivity extends Activity {
             String rootId = DocumentsContract.getTreeDocumentId(tree);
             MapChildren rootChildren = children(tree, rootId);
             if (!rootChildren.names.contains("eboot.bin") || !rootChildren.names.contains("sce_sys")
-                    || !rootChildren.names.contains("sce_module") || !rootChildren.names.contains("dvdroot_ps4")) {
-                throw new Exception("Select the extracted game folder; it must contain eboot.bin, sce_sys, sce_module, and dvdroot_ps4");
+                    || !rootChildren.names.contains("sce_module")) {
+                throw new Exception("Select the extracted game folder; it must contain eboot.bin, sce_sys, and sce_module");
             }
             requireReadableFile(tree, rootChildren, "eboot.bin");
             String sysId = rootChildren.idsByName.get("sce_sys");
@@ -197,10 +197,6 @@ public final class MainActivity extends Activity {
             MapChildren moduleChildren = children(tree, moduleId);
             requireReadableFile(tree, moduleChildren, "libc.prx");
             requireReadableFile(tree, moduleChildren, "libSceFios2.prx");
-            String resourcesId = rootChildren.idsByName.get("dvdroot_ps4");
-            if (children(tree, resourcesId).names.isEmpty()) {
-                throw new Exception("dvdroot_ps4 is empty; select a complete extracted game folder");
-            }
             Sfo info = parseSfo(sfoBytes);
             if (!GAME_ID.equals(info.values.get("TITLE_ID"))) {
                 throw new Exception("Wrong game: expected CUSA08809, found " + info.values.getOrDefault("TITLE_ID", "unknown"));

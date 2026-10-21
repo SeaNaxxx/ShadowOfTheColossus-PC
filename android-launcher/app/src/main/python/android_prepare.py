@@ -28,16 +28,6 @@ def prepare_game(game_path, modules_path, output_path):
         except OSError as error:
             raise ValueError(f"Cannot read required game file {path.relative_to(game)}: {error}") from error
 
-    resources = game / "dvdroot_ps4"
-    if not resources.is_dir():
-        raise ValueError("Missing required game resource folder: dvdroot_ps4")
-    try:
-        next(resources.iterdir())
-    except StopIteration as error:
-        raise ValueError("Game resource folder is empty: dvdroot_ps4") from error
-    except OSError as error:
-        raise ValueError(f"Cannot list game resource folder dvdroot_ps4: {error}") from error
-
     prepare_eboot(game, output)
     linked_modules = list(DEFAULT_MODULES)
     if all((modules_dir / name).is_file() for name in SYS_MODULES):
