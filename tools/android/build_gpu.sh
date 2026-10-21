@@ -56,6 +56,25 @@ if [[ ! -f "$prefix/include/boost/icl/interval_set.hpp" ]]; then
     cp -a "$boost_headers/." "$prefix/include/boost/"
 fi
 
+vulkan_headers=
+for candidate in "${VULKAN_SDK:+$VULKAN_SDK/include/vulkan}" \
+    "${SOTC_HOST_PREFIX:+$SOTC_HOST_PREFIX/include/vulkan}" \
+    /usr/include/vulkan /usr/local/include/vulkan /opt/homebrew/include/vulkan; do
+    if [[ -f "$candidate/vulkan.hpp" && -d "$(dirname "$candidate")/vk_video" ]]; then
+        vulkan_headers=$candidate
+        break
+    fi
+done
+if [[ ! -f "$prefix/include/vulkan/vulkan.hpp" ]]; then
+    [[ -n $vulkan_headers ]] || {
+        echo "Host Vulkan headers are required (vulkan/vulkan.hpp was not found)." >&2
+        exit 1
+    }
+    mkdir -p "$prefix/include/vulkan" "$prefix/include/vk_video"
+    cp -a "$vulkan_headers/." "$prefix/include/vulkan/"
+    cp -a "$(dirname "$vulkan_headers")/vk_video/." "$prefix/include/vk_video/"
+fi
+
 for path in gpu/third_party/fsr-vulkan gpu/third_party/imgui gpu/third_party/magic_enum \
     gpu/third_party/miniz third_party/LibAtrac9; do
     if [[ ! -f "$path/CMakeLists.txt" && ! -f "$path/imgui.h" ]]; then
@@ -81,6 +100,7 @@ cmake -S gpu -B "$build" -G Ninja \
     -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=BOTH \
     -DBoost_NO_BOOST_CMAKE=ON \
     -DBoost_INCLUDE_DIR="$prefix/include" \
+    -DVulkan_INCLUDE_DIR="$prefix/include" \
     -DSOTC_CPU_LIBRARY="$cpu" \
     -DBB_LTO=OFF -DBB_PGO=off >/dev/null
 
