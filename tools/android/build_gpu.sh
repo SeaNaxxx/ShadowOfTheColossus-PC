@@ -31,7 +31,7 @@ command -v glslangValidator >/dev/null || {
 prefix="$repo/out/android-arm64/deps/prefix"
 cpu="$repo/out/android-arm64/lib/libsotc_cpu.so"
 [[ -f $cpu ]] || { echo "Build the FEXCore CPU library first with tools/android/build_cpu.sh." >&2; exit 1; }
-[[ -f "$prefix/lib/pkgconfig/SDL3.pc" ]] || {
+[[ -f "$prefix/lib/pkgconfig/sdl3.pc" ]] || {
     echo "Build SDL3 first with tools/android/build_cpu.sh." >&2
     exit 1
 }
