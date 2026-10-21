@@ -839,6 +839,24 @@ static void apply_sotc_cmdline(const char *path, uint64_t size) {
     printf("Engine command line: %s\n",text);
 }
 #ifndef _WIN32
+#if defined(__ANDROID__) && __ANDROID_API__ < 33
+/* Bionic declares backtrace() only from API 33; the toolchain unwinder walks the
+   same frames and is available at every API level. */
+#include <unwind.h>
+
+typedef struct {
+    void **frames;
+    int depth;
+    int max;
+} probe_unwind_state;
+
+static _Unwind_Reason_Code probe_unwind_cb(struct _Unwind_Context *ctx, void *data) {
+    probe_unwind_state *st = data;
+    if (st->depth < st->max) st->frames[st->depth++] = (void *)_Unwind_GetIP(ctx);
+    return _URC_NO_REASON;
+}
+#endif
+
 static void fault(int sig, siginfo_t *info, void *context) {
     if (guest_cpu_handle_fault(sig, info, context)) return;
     /* GPU page tracking (write-protected guest pages) is resolved first. */
@@ -871,7 +889,13 @@ static void fault(int sig, siginfo_t *info, void *context) {
     if (gpu_enabled) bbgpu_dump_guest_writes(context);
     /* Host call chain (frames with unwind info; guest frames end it). */
     void *frames[32];
+#if defined(__ANDROID__) && __ANDROID_API__ < 33
+    probe_unwind_state st = { frames, 0, 32 };
+    _Unwind_Backtrace(probe_unwind_cb, &st);
+    int depth = st.depth;
+#else
     int depth = backtrace(frames, 32);
+#endif
     for (int i = 2; i < depth; ++i) {
         if (dladdr(frames[i], &where) && where.dli_fname)
             snprintf(line, sizeof(line), "  #%d %s+0x%lx (%s)\n", i, where.dli_fname,
