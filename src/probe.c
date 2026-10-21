@@ -50,7 +50,7 @@ static int entered_game;
 static int gpu_enabled;
 int vulkan_smoke(void);
 
-static void fail(const char *message) { fprintf(stderr, "ERROR: %s\n", message); exit(1); }
+static __attribute__((noreturn)) void fail(const char *message) { fprintf(stderr, "ERROR: %s\n", message); exit(1); }
 /* The PS4's Jaguar CPU has BMI1/LZCNT/MOVBE and the game uses them (ANDN, BEXTR, TZCNT, ...); older
    CPUs raise an illegal instruction or silently compute TZCNT/LZCNT wrong. Fail with a clear message. */
 static void require_cpu_features(void) {
