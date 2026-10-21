@@ -758,6 +758,11 @@ static uint64_t patch_tcb_loads(const Segment *segments, uint64_t count) {
     }
     return patched;
 }
+#else
+/* The BPE heap guard traps frees with debug registers, Windows-only; the GPU side treats
+ * 0 as "no guarded heap" and leaves the heaps alone. */
+uintptr_t runtime_sotc_heap(void) { return 0; }
+uintptr_t runtime_sotc_heap_table(void) { return 0; }
 #endif
 #ifdef _WIN32
 /* The engine times itself with inline rdtsc ((now - start) / frequency, unsigned). Some

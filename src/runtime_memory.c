@@ -232,6 +232,10 @@ uint64_t runtime_memory_carve_splits(void) { return __atomic_exchange_n(&carve_s
 static void *carve_stopped[256];
 static size_t carve_nstopped;
 static int carve_stopping;
+#else
+/* The carve path (thread suspension, live view splits) is Windows-only; Flip's report
+ * omits the line when the count is 0. */
+uint64_t runtime_memory_carve_splits(void) { return 0; }
 #endif
 static void carve_resume_on_fail(void) {
 #ifdef _WIN32
