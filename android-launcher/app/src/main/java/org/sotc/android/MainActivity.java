@@ -78,7 +78,7 @@ public final class MainActivity extends Activity {
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(pad, dp(28), pad, pad);
-        content.setBackgroundColor(0xff17191c);
+        content.setBackground(getDrawable(R.drawable.launcher_bg));
 
         TextView title = new TextView(this);
         title.setText("Shadow of the Colossus");
@@ -391,6 +391,7 @@ public final class MainActivity extends Activity {
             TextView contents = text(prefix + new String(bytes, StandardCharsets.UTF_8), 11, 0xffe6d8b5);
             ScrollView scroll = new ScrollView(this);
             scroll.setPadding(dp(12), dp(8), dp(12), dp(8));
+            scroll.setBackground(getDrawable(R.drawable.log_bg));
             scroll.addView(contents);
             new AlertDialog.Builder(this).setTitle("Runtime log").setView(scroll)
                     .setPositiveButton("Close", null).show();
