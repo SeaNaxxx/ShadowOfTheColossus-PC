@@ -341,10 +341,21 @@ static int pool(void) {
 }
 #else
 /* Direct memory occupies [0,POOL_SIZE) of the memfd, flexible memory [POOL_SIZE,+FLEX_SPAN). */
+#if defined(__ANDROID__) && __ANDROID_API__ < 29
+/* Bionic declares memfd_create() only from API 29; the syscall exists on every kernel. */
+#include <sys/syscall.h>
+static int guest_memfd(const char *name, unsigned int flags) {
+    return (int)syscall(__NR_memfd_create,name,flags);
+}
+#else
+static int guest_memfd(const char *name, unsigned int flags) {
+    return memfd_create(name,flags);
+}
+#endif
 static int pool(void) {
     if (pool_fd>=0) return 0;
     region_direct_init();
-    pool_fd=memfd_create("bb-guest-memory", MFD_CLOEXEC);
+    pool_fd=guest_memfd("bb-guest-memory", MFD_CLOEXEC);
     if (pool_fd<0 || ftruncate(pool_fd,(off_t)(POOL_SIZE+FLEX_SPAN))) return -1;
     void *view=mmap(NULL,POOL_SIZE+FLEX_SPAN,PROT_READ|PROT_WRITE,MAP_SHARED|MAP_NORESERVE,pool_fd,0);
     if (view==MAP_FAILED) return -1;
