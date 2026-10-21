@@ -14,6 +14,7 @@
 #include <ucontext.h>
 #include <unistd.h>
 #endif
+#include "common/arch.h"
 #include "common/rdtsc.h"
 
 namespace BbWriteLog {
@@ -107,11 +108,16 @@ extern "C" void bbgpu_dump_guest_writes(void* ucontext) {
     if (Mode() == 0) {
         return;
     }
+#if !defined(_WIN32) && !defined(ARCH_X86_64)
+    // The dump below reads guest x86-64 registers out of the host signal context; on other
+    // architectures the game's registers live in the CPU backend's state instead.
+    std::fprintf(stderr, "Write log: guest register dump requires x86-64\n");
+#else
 #ifdef _WIN32
     // The loader passes EXCEPTION_POINTERS (see signal_context.cpp).
     const CONTEXT* c = static_cast<const EXCEPTION_POINTERS*>(ucontext)->ContextRecord;
     const std::uint64_t regs[] = {c->Rax, c->Rbx, c->Rcx, c->Rdx, c->Rsi, c->Rdi, c->R14, c->R15};
-#else
+#elif defined(ARCH_X86_64)
     const auto* uc = static_cast<const ucontext_t*>(ucontext);
     const auto* g = uc->uc_mcontext.gregs;
     const std::uint64_t regs[] = {std::uint64_t(g[REG_RAX]), std::uint64_t(g[REG_RBX]),
@@ -185,4 +191,5 @@ extern "C" void bbgpu_dump_guest_writes(void* ucontext) {
         }
     }
     std::fprintf(stderr, "Write log: %llu writes logged\n", (unsigned long long)n);
+#endif
 }
