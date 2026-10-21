@@ -4,8 +4,13 @@
 #include "video_core/renderer_vulkan/vk_framegen.h"
 #include "video_core/sotc_ui_lang.h"
 
+#ifdef _WIN32
 #include <windows.h>
 #include <dxgi.h>
+#else
+#include <strings.h>
+#define _stricmp strcasecmp
+#endif
 
 #include <atomic>
 #include <chrono>
@@ -42,6 +47,7 @@ Asked AskedMode() {
     return asked;
 }
 
+#ifdef _WIN32
 /// An NVIDIA GPU in the system (DXGI, before Vulkan): Streamline is for those only.
 bool HasNvidiaGpu() {
     HMODULE dxgi = LoadLibraryW(L"dxgi.dll");
@@ -65,6 +71,12 @@ bool HasNvidiaGpu() {
     }
     return found;
 }
+#else
+/// Streamline ships Windows interposer DLLs only, so DLSS-G has no path elsewhere.
+bool HasNvidiaGpu() {
+    return false;
+}
+#endif
 
 std::atomic<int> current{static_cast<int>(Mode::Off)};
 std::atomic<bool> have_dlss{false}, have_fsr{false};

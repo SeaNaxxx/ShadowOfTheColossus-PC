@@ -3,7 +3,11 @@
 
 #include "video_core/renderer_vulkan/vk_fsrfg.h"
 
+#include "common/cpu_pause.h"
+
+#ifdef _WIN32
 #include <windows.h>
+#endif
 
 #include <algorithm>
 #include <array>
@@ -11,6 +15,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <deque>
+#include <thread>
 #include <utility>
 #include <vk_mem_alloc.h>
 
@@ -249,6 +254,7 @@ FfxVkFsr3_3_1_6FrameGenerationImage FgImage(vk::Image image, vk::Format format, 
     };
 }
 
+#ifdef _WIN32
 /// Sleeps until `due`: a high resolution waitable timer, then a short spin.
 void SleepUntil(Clock::time_point due) {
     static HANDLE timer = CreateWaitableTimerExW(nullptr, nullptr,
@@ -273,6 +279,23 @@ void SleepUntil(Clock::time_point due) {
         YieldProcessor();
     }
 }
+#else
+/// Sleeps until `due`: sleeps most of the wait, then a short spin.
+void SleepUntil(Clock::time_point due) {
+    using namespace std::chrono_literals;
+    for (;;) {
+        const auto left = due - Clock::now();
+        if (left <= 0ns) {
+            return;
+        }
+        if (left > 1500us) {
+            std::this_thread::sleep_for(left - 1000us);
+            continue;
+        }
+        Common::CpuPause();
+    }
+}
+#endif
 
 } // namespace
 
