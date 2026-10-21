@@ -73,6 +73,12 @@ driver). No Python install needed.
 
 The patch modes (60 FPS, 16x filtering) only apply to EU 1.01; other versions run at 30 FPS.
 
+### Android port (work in progress)
+
+An Android launcher and game-data importer are being developed in
+[`android-launcher/`](android-launcher/README.md). The current APK source does not include game
+files and does not yet run the game; the ARM64 runtime and launch path are still being ported.
+
 ### Launcher features
 
 Game library and automatic search, shadPS4 save import, 720p–4K output (the game renders at
