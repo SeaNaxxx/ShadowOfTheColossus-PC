@@ -6,6 +6,8 @@ bbport.ini
 fsr4_shaders/
 pgo/
 *.png
+# The android launcher ships PNG icon layers and watermark bitmaps in res/
+!android-launcher/app/src/main/res/**/*.png
 last_run.log
 dist/
 packaging/runtime-paths.nix
