@@ -115,7 +115,7 @@ static void set_gs(void *base) {
 }
 #define tls_block_alloc(size) _aligned_malloc(size,64)
 #else
-static void set_gs(void *base) { guest_cpu_set_gs_base(base); }
+static void set_gs(void *base) { guest_cpu_set_gs(base); }
 #define tls_block_alloc(size) aligned_alloc(64,size)
 #endif
 /* Build TCB/static TLS for the calling host thread and point GS at it. */
