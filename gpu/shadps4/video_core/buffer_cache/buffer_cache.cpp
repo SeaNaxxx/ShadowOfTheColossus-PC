@@ -45,7 +45,7 @@ static constexpr size_t STREAM_BUFFER_SIZE = 128_MB;
 /// the draw thread's VirtualProtect calls), every frame; a smaller window leaves the pages the
 /// guest does not read protected and GPU-modified. Read once, at static initialisation (no
 /// function-local guard in the fault paths); BufferCache::rb_narrow_window applies it.
-static const u64 rb_narrow_env = [] {
+static const u64 rb_narrow_env = [] -> u64 {
     const char* v = std::getenv("SOTC_RB_NARROW");
     const u64 kib = v ? std::strtoull(v, nullptr, 10) : 1;
     if (kib == 0) {
