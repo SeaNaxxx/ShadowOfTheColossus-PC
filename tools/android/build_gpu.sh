@@ -92,6 +92,26 @@ if [[ ! -f "$prefix/include/vulkan/vulkan.hpp" ]]; then
     cp -a "$(dirname "$vulkan_headers")/vk_video/." "$prefix/include/vk_video/"
 fi
 
+# VulkanMemoryAllocator ships a host CMake config whose include dir is invisible
+# to the NDK cross-build; put the header in the prefix and use it instead.
+vma_header=
+for candidate in "${SOTC_HOST_PREFIX:+$SOTC_HOST_PREFIX/include/vk_mem_alloc.h}" \
+    /usr/include/vk_mem_alloc.h /usr/local/include/vk_mem_alloc.h \
+    /usr/include/vma/vk_mem_alloc.h; do
+    if [[ -f "$candidate" ]]; then
+        vma_header=$candidate
+        break
+    fi
+done
+if [[ ! -f "$prefix/include/vk_mem_alloc.h" ]]; then
+    [[ -n $vma_header ]] || {
+        echo "Host VulkanMemoryAllocator header is required (vk_mem_alloc.h was not found)." >&2
+        exit 1
+    }
+    mkdir -p "$prefix/include"
+    cp -a "$vma_header" "$prefix/include/vk_mem_alloc.h"
+fi
+
 for path in gpu/third_party/fsr-vulkan gpu/third_party/imgui gpu/third_party/magic_enum \
     gpu/third_party/miniz third_party/LibAtrac9; do
     if [[ ! -f "$path/CMakeLists.txt" && ! -f "$path/imgui.h" ]]; then
@@ -118,6 +138,8 @@ cmake -S gpu -B "$build" -G Ninja \
     -DBoost_NO_BOOST_CMAKE=ON \
     -DBoost_INCLUDE_DIR="$prefix/include" \
     -DVulkan_INCLUDE_DIR="$prefix/include" \
+    -DCMAKE_DISABLE_FIND_PACKAGE_VulkanMemoryAllocator=ON \
+    -DVMA_INCLUDE_DIR="$prefix/include" \
     -DSOTC_CPU_LIBRARY="$cpu" \
     -DBB_LTO=OFF -DBB_PGO=off >/dev/null
 
