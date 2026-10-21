@@ -79,7 +79,7 @@ public final class MainActivity extends Activity {
         content.addView(subtitle, matchWrap());
 
         content.addView(section("Game files"), matchWrap());
-        content.addView(text("Select the extracted CUSA08809 EU 1.01 game folder itself. The app copies it into its private app storage; game data is not part of the APK.", 14, 0xffc6c7c9), matchWrap());
+        content.addView(text("Extract your own PS4 PKG with a PS4 PKG Extractor app first, then select the resulting CUSA08809 EU 1.01 folder here. This launcher imports the extracted folder; game data is not part of the APK.", 14, 0xffc6c7c9), matchWrap());
         gameStatus = text("Game: checking", 14, 0xffe6d8b5);
         gameStatus.setPadding(0, dp(12), 0, dp(10));
         content.addView(gameStatus, matchWrap());

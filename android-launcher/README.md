@@ -15,9 +15,11 @@ The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
 
 ## Import game data
 
-On first launch, select the extracted `CUSA08809` base-game folder itself. The launcher verifies
-`eboot.bin`, `sce_sys/param.sfo`, title ID `CUSA08809`, and EU version `01.01`, then copies the
-folder into app-specific storage under `Android/data/org.sotc.android/files/SotC/game`.
+First, use a PS4 PKG Extractor app to extract your own game PKG. Then select the resulting
+`CUSA08809` base-game folder in this launcher. It verifies `eboot.bin`, `sce_sys/param.sfo`, title
+ID `CUSA08809`, and EU version `01.01`, then copies the folder into app-specific storage under
+`Android/data/org.sotc.android/files/SotC/game`. PKG extraction is handled by that separate app;
+this launcher imports the extracted game folder.
 
 Sound is optional. Select `libSceNgs2.sprx` and `libSceUlt.sprx` from your own decrypted console
 system modules. They are stored in the adjacent `sys_modules` folder. Neither game nor Sony files
